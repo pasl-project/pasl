@@ -1,6 +1,6 @@
 # PASL - Personalized Accounts & Secure Ledger
 
-PASL is a cryptocurrency utilizing the Safebox blockhain, providing strong security with human-friendly account numbers (addresses) like 0-10, 5-70 or 54321-26.
+PASL is a cryptocurrency utilizing the Safebox blockhain, providing strong security with easy to remember addresses (account numbers) like 0-10, 5-70 or 54321-26.
 
 Copyright (c) 2018 PASL Project
 

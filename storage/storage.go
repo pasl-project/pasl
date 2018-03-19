@@ -26,14 +26,23 @@ import (
 	"encoding/binary"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/pasl-project/pasl/utils"
 )
 
+const (
+	blocksCacheLimit   = 50
+	accountsCacheLimit = 1000
+)
+
 type Storage struct {
 	db               *bolt.DB
 	accountsPerBlock uint32
+	lock             sync.RWMutex
+	blocksCache      map[uint32][]byte
+	accountsCache    map[uint32][]byte
 }
 
 func WithStorage(accountsPerBlock uint32, fn func(storage *Storage) error) error {
@@ -47,8 +56,11 @@ func WithStorage(accountsPerBlock uint32, fn func(storage *Storage) error) error
 	storage := &Storage{
 		db:               db,
 		accountsPerBlock: accountsPerBlock,
+		blocksCache:      make(map[uint32][]byte),
+		accountsCache:    make(map[uint32][]byte),
 	}
 
+	defer storage.flush()
 	return fn(storage)
 }
 
@@ -85,39 +97,84 @@ func (this *Storage) Load(callback func(number uint32, serialized []byte) error)
 	return
 }
 
-func (this *Storage) Store(index uint32, data []byte, foreach func(func(number uint32, data []byte) error) error) error {
+func (this *Storage) Store(index uint32, data []byte, affectedAccounts func(func(number uint32, data []byte) error) error) error {
+	flush := false
+
+	func() {
+		this.lock.Lock()
+		defer this.lock.Unlock()
+
+		this.blocksCache[index] = make([]byte, len(data))
+		copy(this.blocksCache[index], data)
+
+		affectedAccounts(func(number uint32, data []byte) (err error) {
+			this.accountsCache[number] = make([]byte, len(data))
+			copy(this.accountsCache[number], data)
+			return
+		})
+
+		flush = len(this.blocksCache) > blocksCacheLimit || len(this.accountsCache) > accountsCacheLimit
+	}()
+
+	if flush {
+		return this.flush()
+	}
+
+	return nil
+}
+
+func (this *Storage) flush() error {
 	return this.db.Update(func(tx *bolt.Tx) (err error) {
+		this.lock.Lock()
+		defer this.lock.Unlock()
+
 		err = (func() error {
 			var bucket *bolt.Bucket
 			if bucket, err = tx.CreateBucketIfNotExists([]byte("blocks")); err != nil {
 				return err
 			}
 
-			var indexBuf [4]byte
-			binary.BigEndian.PutUint32(indexBuf[:], index)
-			if err = bucket.Put(indexBuf[:], data); err != nil {
-				return err
+			var buffer [4]byte
+			for index, data := range this.blocksCache {
+				binary.BigEndian.PutUint32(buffer[:], index)
+				if err = bucket.Put(buffer[:], data); err != nil {
+					return err
+				}
 			}
 
 			if bucket, err = tx.CreateBucketIfNotExists([]byte("accounts")); err != nil {
 				return err
 			}
 
-			var buffer [4]byte
-			return foreach(func(number uint32, data []byte) error {
+			for number, data := range this.accountsCache {
 				binary.BigEndian.PutUint32(buffer[:], number)
-				return bucket.Put(buffer[:], data)
-			})
+				if err = bucket.Put(buffer[:], data); err != nil {
+					return err
+				}
+			}
+
+			return nil
 		})()
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
+
+		this.blocksCache = make(map[uint32][]byte)
+		this.accountsCache = make(map[uint32][]byte)
+
 		return nil
 	})
 }
 
 func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
+	this.lock.RLock()
+	data = this.blocksCache[index]
+	this.lock.RUnlock()
+	if data != nil {
+		return data, nil
+	}
+
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 

@@ -19,7 +19,7 @@ go get -v github.com/pasl-project/pasl
 ## Build and install
 
 ```bash
-go intall github.com/pasl-project/pasl
+go install github.com/pasl-project/pasl
 ```
 
 Binaries will be installed in `$GOPATH/bin/` by default

@@ -3,9 +3,6 @@ PASL - Personalized Accounts & Secure Ledger
 
 Copyright (C) 2018 PASL Project
 
-Greatly inspired by Kurt Rose's python implementation
-https://gist.github.com/kurtbrose/4423605
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -31,7 +28,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-
 
 	"github.com/coin-network/curve"
 	"github.com/pasl-project/pasl/utils"

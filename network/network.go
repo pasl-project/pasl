@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/utils"
 
 	"github.com/cevaris/ordered_map"
@@ -52,6 +53,7 @@ type Node interface {
 type Peer struct {
 	Address              Address
 	LastConnectTimestamp uint32
+	ReconnectPenalty     uint32
 	Attempts             int
 	Errors               int
 }
@@ -303,10 +305,16 @@ func (node *nodeInternal) Updated() {
 
 		toAdd := max - count
 
+		current := uint32(time.Now().Unix())
 		iter := node.PeersQueue.IterFunc()
 		for kv, ok := iter(); ok && toAdd > 0; kv, ok = iter() {
 			var address Address = kv.Key.(Address)
 			var peer *Peer = kv.Value.(*Peer)
+			if current < peer.LastConnectTimestamp+peer.ReconnectPenalty {
+				continue
+			}
+			peer.LastConnectTimestamp = uint32(time.Now().Unix())
+			peer.ReconnectPenalty = utils.MinUint32(defaults.ReconnectionDelayMax, peer.ReconnectPenalty+1)
 
 			id := node.Server.Dial(address.String(), node.Config.TimeoutConnect)
 			if id != 0 {

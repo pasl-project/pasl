@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -45,6 +46,10 @@ func main() {
 
 	utils.Tracef(defaults.UserAgent)
 
+	var p2pPort uint
+	flag.UintVar(&p2pPort, "p2p-bind-port", uint(defaults.P2PPort), "P2P bind port")
+	flag.Parse()
+
 	err := storage.WithStorage(defaults.AccountsPerBlock, func(storage *storage.Storage) error {
 		blockchain, err := blockchain.NewBlockchain(storage)
 		if err != nil {
@@ -52,7 +57,7 @@ func main() {
 		}
 
 		config := network.Config{
-			ListenAddrs:    []string{fmt.Sprintf("tcp://%s:%d", defaults.P2PBindAddress, defaults.P2PPort)},
+			ListenAddrs:    []string{fmt.Sprintf("tcp://%s:%d", defaults.P2PBindAddress, p2pPort)},
 			MaxIncoming:    defaults.MaxIncoming,
 			MaxOutgoing:    defaults.MaxOutgoing,
 			TimeoutConnect: defaults.TimeoutConnect,

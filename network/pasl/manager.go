@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pasl
 
 import (
+	"context"
 	"io"
 	"math/rand"
 	"sync"
@@ -53,8 +54,8 @@ type manager struct {
 
 	waitGroup sync.WaitGroup
 
-	blockchain  		   *blockchain.Blockchain
-	nonce				   []byte
+	blockchain *blockchain.Blockchain
+	nonce      []byte
 
 	timeoutRequest         time.Duration
 	peerUpdates            chan<- PeerInfo
@@ -62,36 +63,44 @@ type manager struct {
 	onNewBlock             chan *eventNewBlock
 	onNewOperation         chan *eventNewOperation
 	closed                 chan *PascalConnection
-	initializedConnections map[*PascalConnection]uint32
-	downloading            bool
-	downloadingDone        chan interface{}
+	initializedConnections sync.Map
+	doSyncValue            bool
+	doSync                 *sync.Cond
 }
 
 func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, timeoutRequest time.Duration, callback func(network.Manager) error) error {
 	manager := &manager{
-		timeoutRequest:         timeoutRequest,
-		blockchain:             blockchain,
-		nonce:                  nonce,
-		peerUpdates:            peerUpdates,
-		onStateUpdate:          make(chan *PascalConnection),
-		onNewOperation:         make(chan *eventNewOperation),
-		closed:                 make(chan *PascalConnection),
-		onNewBlock:             make(chan *eventNewBlock),
-		initializedConnections: make(map[*PascalConnection]uint32),
-		downloading:            false,
-		downloadingDone:        make(chan interface{}),
+		timeoutRequest: timeoutRequest,
+		blockchain:     blockchain,
+		nonce:          nonce,
+		peerUpdates:    peerUpdates,
+		onStateUpdate:  make(chan *PascalConnection),
+		onNewOperation: make(chan *eventNewOperation),
+		closed:         make(chan *PascalConnection),
+		onNewBlock:     make(chan *eventNewBlock),
+		doSync:         sync.NewCond(&sync.Mutex{}),
 	}
 	defer manager.waitGroup.Wait()
 
-	stop := make(chan bool)
+	signalSync := func() {
+		manager.doSync.L.Lock()
+		manager.doSyncValue = true
+		manager.doSync.Broadcast()
+		manager.doSync.L.Unlock()
+	}
+	defer signalSync()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager.waitGroup.Add(1)
 	go func() {
 		defer manager.waitGroup.Done()
-
 		for {
 			select {
 			case event := <-manager.onNewBlock:
 				if err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock); err != nil {
-					utils.Tracef("[P2P] AddBlockSerialized %d failed %v", event.SerializedBlock.Header.Index, err)
+					utils.Tracef("[P2P %p] AddBlockSerialized %d failed %v", event.source, event.SerializedBlock.Header.Index, err)
 					if event.shouldBroadcast {
 						manager.forEachConnection(func(conn *PascalConnection) {
 							conn.BroadcastBlock(&event.SerializedBlock)
@@ -107,65 +116,83 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 						conn.BroadcastTx(&event.Tx)
 					}, event.source)
 				}
-			case <-manager.downloadingDone:
-				manager.downloading = false
-				manager.startDownloading()
 			case conn := <-manager.closed:
-				delete(manager.initializedConnections, conn)
+				manager.initializedConnections.Delete(conn)
 			case conn := <-manager.onStateUpdate:
 				connHeight, _ := conn.GetState()
-				manager.initializedConnections[conn] = connHeight
-				manager.startDownloading()
-			case <-stop:
+				manager.initializedConnections.Store(conn, connHeight)
+				signalSync()
+			case <-ctx.Done():
+				return
 			}
 		}
+		utils.Tracef("Exit1")
 	}()
 
-	err := callback(manager)
-	stop <- true
+	manager.waitGroup.Add(1)
+	go func() {
+		defer manager.waitGroup.Done()
 
-	return err
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				if !manager.sync() {
+					manager.doSync.L.Lock()
+					if !manager.doSyncValue {
+						manager.doSync.Wait()
+						manager.doSyncValue = false
+					}
+					manager.doSync.L.Unlock()
+				}
+			}
+		}
+		utils.Tracef("Exit2")
+	}()
+
+	return callback(manager)
 }
 
-func (this *manager) startDownloading() {
-	if this.downloading {
-		return
-	}
-
+func (this *manager) sync() bool {
 	nodeHeight, _ := this.blockchain.GetState()
 
-	candidates := make(map[uint32]*PascalConnection)
-	for conn, height := range this.initializedConnections {
-		if height > nodeHeight {
-			candidates[rand.Uint32()] = conn
+	candidates := make([]*PascalConnection, 0)
+	this.initializedConnections.Range(func(conn, height interface{}) bool {
+		if height.(uint32) > nodeHeight {
+			candidates = append(candidates, conn.(*PascalConnection))
+		}
+		return true
+	})
+
+	candidatesTotal := len(candidates)
+	if candidatesTotal == 0 {
+		return false
+	}
+
+	selected := rand.Int() % candidatesTotal
+	conn := candidates[selected]
+	height, _ := conn.GetState()
+	utils.Tracef("[P2P %p] Fetching blocks %d -> %d (%d blocks ahead)", conn, nodeHeight, height, height-nodeHeight)
+
+	to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
+	blocks := conn.BlocksGet(nodeHeight, to)
+	for _, block := range blocks {
+		if err := this.blockchain.AddBlockSerialized(&block); err != nil {
+			utils.Tracef("[P2P %p] Block #%d verification failed %v", block.Header.Index, err)
 		}
 	}
 
-	for _, conn := range candidates {
-		height, _ := conn.GetState()
-		utils.Tracef("[P2P %p] Remote node height %d (%d blocks ahead)", conn, height, height-nodeHeight)
-
-		this.downloading = true
-		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
-		if err := conn.StartBlocksDownloading(nodeHeight, to, this.downloadingDone); err == nil {
-			utils.Tracef("[P2P %p] Downloading blocks #%d .. #%d", conn, nodeHeight, to)
-			break
-		} else {
-			this.downloading = false
-		}
-	}
-
-	if !this.downloading && len(candidates) == 0 {
-		utils.Tracef("On main chain, height %d", nodeHeight)
-	}
+	return true
 }
 
 func (this *manager) forEachConnection(fn func(*PascalConnection), except *PascalConnection) {
-	for conn := range this.initializedConnections {
+	this.initializedConnections.Range(func(conn, height interface{}) bool {
 		if conn != except {
-			fn(conn)
+			fn(conn.(*PascalConnection))
 		}
-	}
+		return true
+	})
 }
 
 func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool) (interface{}, error) {

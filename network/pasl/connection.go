@@ -95,14 +95,18 @@ func (this *PascalConnection) GetState() (uint32, []byte) {
 	return this.state.height, this.state.prevSafeboxHash
 }
 
-func (this *PascalConnection) StartBlocksDownloading(from, to uint32, downloadingDone chan<- interface{}) error {
+func (this *PascalConnection) BlocksGet(from, to uint32) []safebox.SerializedBlock {
 	packet := utils.Serialize(packetGetBlocksRequest{
 		FromIndex: from,
 		ToIndex:   to,
 	})
 
-	onSuccess := func(response *requestResponse, payload []byte) error {
-		defer func() { downloadingDone <- nil }()
+	blocks := make([]safebox.SerializedBlock, 0)
+
+	finished := sync.WaitGroup{}
+	finished.Add(1)
+	err := this.underlying.sendRequest(getBlocks, packet, func(response *requestResponse, payload []byte) error {
+		defer finished.Done()
 
 		if response == nil {
 			return errors.New("GetBlocks request failed")
@@ -112,18 +116,15 @@ func (this *PascalConnection) StartBlocksDownloading(from, to uint32, downloadin
 		if err := utils.Deserialize(&packet, bytes.NewBuffer(payload)); err != nil {
 			return err
 		}
-		for _, it := range packet.Blocks {
-			this.onNewBlock <- &eventNewBlock{
-				event:           event{this},
-				SerializedBlock: it,
-				shouldBroadcast: false,
-			}
-		}
 
+		blocks = append(blocks, packet.Blocks...)
 		return nil
+	})
+	if err == nil {
+		finished.Wait()
 	}
 
-	return this.underlying.sendRequest(getBlocks, packet, onSuccess)
+	return blocks
 }
 
 func (this *PascalConnection) BroadcastTx(operation *tx.Tx) {

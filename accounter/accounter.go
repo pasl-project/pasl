@@ -46,8 +46,8 @@ func NewAccounter() *Accounter {
 }
 
 func (this *Accounter) Copy() *Accounter {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+	this.lock.RLock()
+	defer this.lock.RUnlock()
 
 	hash := make([]byte, 32)
 	copy(hash[:], this.hash)

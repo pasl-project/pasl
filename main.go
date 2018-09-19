@@ -55,7 +55,7 @@ func main() {
 	if dataDir == "" {
 		var err error
 		if dataDir, err = utils.GetDataDir(); err != nil {
-			utils.Panicf("Failed to obtain valid data directory path. Use --data-dir to manually resolve the issue. Error: %v", err)
+			utils.Panicf("Failed to obtain valid data directory path. Use --data-dir to manually specify data directory location. Error: %v", err)
 		}
 	}
 

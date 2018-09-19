@@ -48,9 +48,18 @@ func main() {
 
 	var p2pPort uint
 	flag.UintVar(&p2pPort, "p2p-bind-port", uint(defaults.P2PPort), "P2P bind port")
+	var dataDir string
+	flag.StringVar(&dataDir, "data-dir", "", "Directory to store blockchain files")
 	flag.Parse()
 
-	err := storage.WithStorage(defaults.AccountsPerBlock, func(storage *storage.Storage) error {
+	if dataDir == "" {
+		var err error
+		if dataDir, err = utils.GetDataDir(); err != nil {
+			utils.Panicf("Failed to obtain valid data directory path. Use --data-dir to manually resolve the issue. Error: %v", err)
+		}
+	}
+
+	err := storage.WithStorage(&dataDir, defaults.AccountsPerBlock, func(storage *storage.Storage) error {
 		blockchain, err := blockchain.NewBlockchain(storage)
 		if err != nil {
 			return err

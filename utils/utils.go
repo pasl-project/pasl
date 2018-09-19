@@ -93,7 +93,7 @@ func getHomeDir() (string, error) {
 	return "", errors.New("Failed to obtain user's home dir")
 }
 
-func getDataDir() (string, error) {
+func GetDataDir() (string, error) {
 	home, err := getHomeDir()
 	if err != nil {
 		return "", err
@@ -106,20 +106,12 @@ func getDataDir() (string, error) {
 	return filepath.Join(home, ".pasl"), nil
 }
 
-func CreateDataDir() (string, error) {
-	dir, err := getDataDir()
-	if err != nil {
-		return "", err
+func CreateDirectory(dataDir *string) error {
+	if _, err := os.Stat(*dataDir); os.IsNotExist(err) {
+		return os.Mkdir(*dataDir, 0600)
+	} else {
+		return err
 	}
-
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		err = os.Mkdir(dir, 0600)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	return dir, nil
 }
 
 func formatf(format string, a ...interface{}) string {

@@ -13,7 +13,7 @@ Copyright (c) 2018 PASL Project
 ## Checkout project's repository
 
 ```bash
-go get -v github.com/pasl-project/pasl
+go get -u -v github.com/pasl-project/pasl
 ```
 
 ## Build and install

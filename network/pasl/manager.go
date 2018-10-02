@@ -173,7 +173,8 @@ func (this *manager) sync() bool {
 	selected := rand.Int() % candidatesTotal
 	conn := candidates[selected]
 	height, _ := conn.GetState()
-	utils.Tracef("[P2P %p] Fetching blocks %d -> %d (%d blocks ahead)", conn, nodeHeight, height, height-nodeHeight)
+	ahead := height - nodeHeight
+	utils.Tracef("[P2P %p] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn, nodeHeight, height, ahead, ahead/288)
 
 	to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
 	blocks := conn.BlocksGet(nodeHeight, to)

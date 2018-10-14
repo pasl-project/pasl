@@ -33,7 +33,7 @@ import (
 type helloHandler struct {
 	Nonce              []byte
 	GetTopBlock        func() safebox.BlockBase
-	GetPeersByType     func(addressType network.AddressType) map[network.Address]*network.Peer
+	GetPeersByNetwork  func(network string) map[string]*network.Peer
 	GetUserAgentString func() string
 	BlockUpdates       chan<- safebox.SerializedBlockHeader
 	PeerUpdates        chan<- PeerInfo
@@ -55,11 +55,11 @@ type packetHello struct {
 }
 
 func (this *helloHandler) getTcpPeersList() []PeerInfo {
-	tcpPeers := this.GetPeersByType(network.TCP)
+	tcpPeers := this.GetPeersByNetwork("tcp")
 	peers := make([]PeerInfo, len(tcpPeers))
 	i := 0
 	for address, peer := range tcpPeers {
-		hostPort := strings.Split(address.String()[len("tcp://"):], ":")
+		hostPort := strings.Split(address, ":")
 		port_, err := strconv.Atoi(hostPort[1])
 		port := uint16(port_)
 		if err != nil {

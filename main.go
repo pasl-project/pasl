@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -66,7 +65,7 @@ func main() {
 		}
 
 		config := network.Config{
-			ListenAddrs:    []string{fmt.Sprintf("tcp://%s:%d", defaults.P2PBindAddress, p2pPort)},
+			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, p2pPort),
 			MaxIncoming:    defaults.MaxIncoming,
 			MaxOutgoing:    defaults.MaxOutgoing,
 			TimeoutConnect: defaults.TimeoutConnect,
@@ -95,11 +94,7 @@ func main() {
 		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
 			return network.WithNode(config, manager, func(node network.Node) error {
 				for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-					hostPort := strings.Split(hostPort, ":")
-					port, err := strconv.Atoi(hostPort[1])
-					if err == nil {
-						node.AddPeer(network.NewAddressTcp(hostPort[0], uint16(port)))
-					}
+					node.AddPeer("tcp", hostPort)
 				}
 
 				c := make(chan os.Signal, 2)

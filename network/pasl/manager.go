@@ -126,7 +126,6 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 				return
 			}
 		}
-		utils.Tracef("Exit1")
 	}()
 
 	manager.waitGroup.Add(1)
@@ -137,7 +136,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			select {
 			case <-ctx.Done():
 				return
-			default:
+			case <-time.After(time.Second):
 				if !manager.sync() {
 					manager.doSync.L.Lock()
 					if !manager.doSyncValue {
@@ -148,7 +147,6 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 				}
 			}
 		}
-		utils.Tracef("Exit2")
 	}()
 
 	return callback(manager)

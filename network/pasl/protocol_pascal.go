@@ -31,7 +31,6 @@ import (
 	"github.com/modern-go/concurrent"
 	"github.com/pasl-project/pasl/common"
 	"github.com/pasl-project/pasl/defaults"
-	"github.com/pasl-project/pasl/utils"
 )
 
 const headerSize = 4 + 2 + 2 + 2 + 4 + 2 + 2 + 4
@@ -109,14 +108,10 @@ type requestWithTimeout struct {
 func NewRequest(handler responseHandler, onTimeout func(), timeoutRequest time.Duration) *requestWithTimeout {
 	unboundedExecutor := concurrent.NewUnboundedExecutor()
 	unboundedExecutor.Go(func(ctx context.Context) {
-		timer := time.NewTimer(timeoutRequest)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
 			return
-		case <-timer.C:
+		case <-time.After(timeoutRequest):
 			onTimeout()
 			return
 		}
@@ -241,7 +236,6 @@ func (this *protocol) sendRequest(operationId operationId, payload []byte, handl
 		this.requests[newRequestId] = NewRequest(handler, func() {
 			delete(this.requests, newRequestId)
 			if err := handler(nil, nil); err != nil {
-				utils.Tracef("Disconnecting peer (%v)", err)
 				this.Close()
 			}
 		}, this.timeoutRequest)

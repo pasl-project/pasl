@@ -122,7 +122,7 @@ func load(storage *storage.Storage, accounterInstance *accounter.Accounter) (top
 	return &meta, nil
 }
 
-func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata) error {
+func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool) error {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -138,6 +138,9 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata) error {
 		return nil
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
+		if parentNotFound != nil {
+			*parentNotFound = true
+		}
 		return fmt.Errorf("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
 	}
 
@@ -179,7 +182,7 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata) error {
 	return nil
 }
 
-func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock) error {
+func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, parentNotFound *bool) error {
 	return this.AddBlock(&safebox.BlockMetadata{
 		Index:           block.Header.Index,
 		Miner:           block.Header.Miner,
@@ -190,7 +193,7 @@ func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock) error
 		Payload:         block.Header.Payload,
 		PrevSafeBoxHash: block.Header.PrevSafeboxHash,
 		Operations:      block.Operations,
-	})
+	}, parentNotFound)
 }
 
 func (this *Blockchain) AddOperation(operation *tx.Tx) (new bool, err error) {

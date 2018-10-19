@@ -20,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+// Package ellipticbinary provides basic Elliptic Curve primitives over Binary Field GF(2ⁿ)
 package ellipticbinary
 
 import (
@@ -27,7 +28,7 @@ import (
 	"math/big"
 )
 
-// Curve implements basic Elliptic Curve primitives over Binary Field GF(2ⁿ)
+// Curve defines Elliptic Curve parameters
 type Curve struct {
 	elliptic.Curve
 
@@ -39,8 +40,9 @@ func (this *Curve) Params() *elliptic.CurveParams {
 	return &this.CurveParams
 }
 
+// IsOnCurve check whether an arbitrary point belongs to the curve
 func (this *Curve) IsOnCurve(x, y *big.Int) bool {
-	// y² + xy = x³ + Ax² + b
+	// y² + xy = x³ + Ax² + B
 
 	yVal := newBianryFieldInt(y)
 	y2xy := newBianryFieldInt(y)
@@ -70,6 +72,7 @@ func (this *Curve) IsOnCurve(x, y *big.Int) bool {
 	return y2xy.cmp(x3ax2b) == 0
 }
 
+// Add performs point addition
 func (this *Curve) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
 	// TODO: Identity?
 	if x1.BitLen() == 0 && y1.BitLen() == 0 {
@@ -105,6 +108,7 @@ func (this *Curve) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
 	return xVal.value, yVal.value
 }
 
+// Double does point doubling
 func (this *Curve) Double(x1, y1 *big.Int) (x, y *big.Int) {
 	xVal := newBianryFieldInt(x1)
 	s := newBianryFieldInt(big.NewInt(0)).divmod(newBianryFieldInt(y1), xVal, newBianryFieldInt(this.P))
@@ -127,6 +131,7 @@ func (this *Curve) Double(x1, y1 *big.Int) (x, y *big.Int) {
 	return xVal.value, yVal.value
 }
 
+// ScalarMult multiplies point P(x1, y1) by a scalar k represented in big-endian form
 func (this *Curve) ScalarMult(x1, y1 *big.Int, k []byte) (x, y *big.Int) {
 	doublerX := big.NewInt(0).Set(x1)
 	doublerY := big.NewInt(0).Set(y1)
@@ -148,6 +153,7 @@ func (this *Curve) ScalarMult(x1, y1 *big.Int, k []byte) (x, y *big.Int) {
 	return accX, accY
 }
 
+// ScalarBaseMult multiplies base point G by a scalar k represented in big-endian form
 func (this *Curve) ScalarBaseMult(k []byte) (x, y *big.Int) {
 	return this.ScalarMult(this.Gx, this.Gy, k)
 }

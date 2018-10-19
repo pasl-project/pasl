@@ -70,7 +70,7 @@ func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account
 		return nil, fmt.Errorf("Source account %d not found", this.Source)
 	}
 	if source.Operations+1 != this.OperationId {
-		return nil, fmt.Errorf("Invalid operation index %d != %d expected", this.OperationId, source.Operations+1)
+		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.Number, this.OperationId, source.Operations+1)
 	}
 	if source.Balance < this.Amount {
 		return nil, errors.New("Insufficient balance")

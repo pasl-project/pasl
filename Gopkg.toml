@@ -33,10 +33,6 @@
   branch = "master"
   name = "github.com/coin-network/curve"
 
-[[constraint]]
-  branch = "master"
-  name = "github.com/tidwall/evio"
-
 [prune]
   go-tests = true
   unused-packages = true

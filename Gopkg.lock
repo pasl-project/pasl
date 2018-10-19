@@ -33,18 +33,9 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/tidwall/evio"
-  packages = [
-    ".",
-    "internal"
-  ]
-  revision = "ac89b56717a82482bc7471d5460e9e0c08b88882"
-
-[[projects]]
-  branch = "master"
   name = "github.com/xiphon/ellipticbinary"
   packages = ["."]
-  revision = "3e49b626b8c0e560f645f7cfd96090aa96ba2f8d"
+  revision = "be7a5187429f7e561bb864375fdd8c231cf6765a"
 
 [[projects]]
   branch = "master"
@@ -61,6 +52,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "5a482f8ae87a5a3102b381bc4679aafa147ab474c1b63f7e3bc2ac435a27cf71"
+  inputs-digest = "51e7ddd3855967df58263489374c8f04a691a6ee74ea1db2c7817afade7baf50"
   solver-name = "gps-cdcl"
   solver-version = 1

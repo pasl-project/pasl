@@ -103,8 +103,11 @@ func (node *nodeInternal) GetPeersByNetwork(network string) map[string]*Peer {
 }
 
 func (node *nodeInternal) AddPeer(network, address string) bool {
-	defer node.Updated()
-	return node.Peers.Add(address)
+	added := node.Peers.Add(address)
+	if added {
+		node.Updated()
+	}
+	return added
 }
 
 func (node *nodeInternal) Updated() {

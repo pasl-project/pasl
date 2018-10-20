@@ -279,6 +279,6 @@ func (this *Blockchain) GetBlock(index uint32) safebox.BlockBase {
 	return block
 }
 
-func (this *Blockchain) GetState() (uint32, []byte) {
+func (this *Blockchain) GetState() (height uint32, safeboxHash []byte) {
 	return this.safebox.GetState()
 }

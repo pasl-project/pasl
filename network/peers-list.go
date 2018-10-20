@@ -105,10 +105,12 @@ func (this *PeersList) SetConnected(peer *Peer) {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
 	delete(this.Pending, peer.Address)
+	this.Connected[peer.Address] = peer
 }
 
 func (this *PeersList) SetDisconnected(peer *Peer) {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
+	delete(this.Connected, peer.Address)
 	this.Queued.Set(peer.Address, peer)
 }

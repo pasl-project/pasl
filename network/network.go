@@ -20,11 +20,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package network
 
 import (
+	"context"
 	"io"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/modern-go/concurrent"
 	"github.com/pasl-project/pasl/utils"
 )
 
@@ -74,14 +76,17 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 	defer l.Close()
 	utils.Tracef("Node listening %v", config.ListenAddr)
 
-	wg := sync.WaitGroup{}
-	defer wg.Wait()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	handler := concurrent.NewUnboundedExecutor()
+	handler.Go(func(ctx context.Context) {
+		wg := sync.WaitGroup{}
+		defer wg.Wait()
 
 		for {
+			select {
+			case <-ctx.Done():
+				break
+			}
+
 			conn, err := l.Accept()
 			if err != nil {
 				return
@@ -93,7 +98,8 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false)
 			}()
 		}
-	}()
+	})
+	defer handler.StopAndWaitForever()
 
 	return fn(&node)
 }

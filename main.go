@@ -78,24 +78,25 @@ func main() {
 		nonce := utils.Serialize(key.Public)
 
 		peerUpdates := make(chan pasl.PeerInfo)
+		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
+			return network.WithNode(config, manager, func(node network.Node) error {
+				for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
+					node.AddPeer("tcp", hostPort)
+				}
+
 		updatesListener := concurrent.NewUnboundedExecutor()
 		updatesListener.Go(func(ctx context.Context) {
 			for {
 				select {
 				case peer := <-peerUpdates:
 					utils.Tracef("   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
+							node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
 				case <-ctx.Done():
 					return
 				}
 			}
 		})
 		defer updatesListener.StopAndWaitForever()
-
-		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
-			return network.WithNode(config, manager, func(node network.Node) error {
-				for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-					node.AddPeer("tcp", hostPort)
-				}
 
 				c := make(chan os.Signal, 2)
 				signal.Notify(c, os.Interrupt, syscall.SIGTERM)

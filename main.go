@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pasl-project/pasl/api"
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
@@ -84,25 +85,26 @@ func main() {
 					node.AddPeer("tcp", hostPort)
 				}
 
-		updatesListener := concurrent.NewUnboundedExecutor()
-		updatesListener.Go(func(ctx context.Context) {
-			for {
-				select {
-				case peer := <-peerUpdates:
-					utils.Tracef("   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
+				updatesListener := concurrent.NewUnboundedExecutor()
+				updatesListener.Go(func(ctx context.Context) {
+					for {
+						select {
+						case peer := <-peerUpdates:
+							utils.Tracef("   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
 							node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
-				case <-ctx.Done():
-					return
-				}
-			}
-		})
-		defer updatesListener.StopAndWaitForever()
+						case <-ctx.Done():
+							return
+						}
+					}
+				})
+				defer updatesListener.StopAndWaitForever()
 
-				c := make(chan os.Signal, 2)
-				signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-				<-c
-
-				return nil
+				return network.WithRpcServer(fmt.Sprintf("%s:%d", defaults.RPCBindAddress, defaults.RPCPort), api.NewApi(blockchain), func() error {
+					c := make(chan os.Signal, 2)
+					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+					<-c
+					return nil
+				})
 			})
 		})
 	})

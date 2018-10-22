@@ -78,7 +78,7 @@ func WithRpcServer(hostPort string, api Api, callback func() error) error {
 		})
 	})
 	defer rpcServer.StopAndWaitForever()
-	defer func() { listener.Close() }()
+	defer listener.Close()
 
 	return callback()
 }

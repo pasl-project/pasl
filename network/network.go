@@ -73,7 +73,6 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 	if err != nil {
 		return err
 	}
-	defer l.Close()
 	utils.Tracef("Node listening %v", config.ListenAddr)
 
 	handler := concurrent.NewUnboundedExecutor()
@@ -84,6 +83,8 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			default:
 				break
 			}
 
@@ -95,11 +96,43 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false)
+				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false, ctx.Done())
 			}()
 		}
 	})
 	defer handler.StopAndWaitForever()
+	defer l.Close()
+
+	scheduler := concurrent.NewUnboundedExecutor()
+	scheduler.Go(func(ctx context.Context) {
+		wg := sync.WaitGroup{}
+		defer wg.Wait()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Duration(1) * time.Second):
+				break
+			}
+
+			for _, peer := range node.Peers.ScheduleReconnect((int)(node.Config.MaxOutgoing)) {
+				wg.Add(1)
+				go func(address string) {
+					defer wg.Done()
+					defer node.Peers.SetDisconnected(peer)
+
+					conn, err := net.DialTimeout("tcp", address, node.Config.TimeoutConnect)
+					if err != nil {
+						utils.Tracef("Connection failed: %v", err)
+						return
+					}
+					node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), true, ctx.Done())
+				}(peer.Address)
+			}
+		}
+	})
+	defer scheduler.StopAndWaitForever()
 
 	return fn(&node)
 }
@@ -109,30 +142,10 @@ func (node *nodeInternal) GetPeersByNetwork(network string) map[string]*Peer {
 }
 
 func (node *nodeInternal) AddPeer(network, address string) bool {
-	added := node.Peers.Add(address)
-	if added {
-		node.Updated()
-	}
-	return added
+	return node.Peers.Add(address)
 }
 
-func (node *nodeInternal) Updated() {
-	for _, peer := range node.Peers.ScheduleReconnect((int)(node.Config.MaxOutgoing)) {
-		go func() {
-			defer node.Updated()
-			defer node.Peers.SetDisconnected(peer)
-
-			conn, err := net.DialTimeout("tcp", peer.Address, node.Config.TimeoutConnect)
-			if err != nil {
-				utils.Tracef("Connection failed: %v", err)
-				return
-			}
-			node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), true)
-		}()
-	}
-}
-
-func (node *nodeInternal) HandleConnection(conn io.ReadWriteCloser, address string, isOutgoing bool) {
+func (node *nodeInternal) HandleConnection(conn io.ReadWriteCloser, address string, isOutgoing bool, done <-chan struct{}) {
 	defer conn.Close()
 
 	context, err := node.Manager.OnOpen(address, conn, isOutgoing)
@@ -144,6 +157,12 @@ func (node *nodeInternal) HandleConnection(conn io.ReadWriteCloser, address stri
 
 	buf := make([]byte, 10*1024)
 	for {
+		select {
+		case <-done:
+			return
+		default:
+			break
+		}
 		read, err := conn.Read(buf)
 		if err != nil {
 			break

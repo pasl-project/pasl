@@ -63,9 +63,6 @@ type BlockBase interface {
 	GetPayload() []byte
 	GetPrevSafeBoxHash() []byte
 	GetOperationsHash() []byte
-	GetPow() []byte
-	SerializeHeader(willAppendOperations bool) SerializedBlockHeader
-	Serialize() SerializedBlock
 	GetOperations() []tx.Tx
 }
 
@@ -211,45 +208,6 @@ func (block *Block) GetPrevSafeBoxHash() []byte {
 
 func (block *Block) GetOperationsHash() []byte {
 	return block.OperationsHash[:]
-}
-
-func (block *Block) GetPow() []byte {
-	// TODO: fix
-	return []byte("")
-}
-
-func (block *Block) SerializeHeader(willAppendOperations bool) SerializedBlockHeader {
-	var headerOnly uint8
-	if willAppendOperations {
-		headerOnly = 2
-	} else {
-		headerOnly = 3
-	}
-	return SerializedBlockHeader{
-		HeaderOnly: headerOnly,
-		Version: common.Version{
-			Major: 1,
-			Minor: 1,
-		},
-		Index:           block.GetIndex(),
-		Miner:           utils.Serialize(block.GetMiner()),
-		Reward:          block.GetReward(),
-		Fee:             block.GetFee(),
-		Time:            block.GetTimestamp(),
-		Target:          block.GetTarget().GetCompact(),
-		Nonce:           block.GetNonce(),
-		Payload:         block.GetPayload(),
-		PrevSafeboxHash: block.GetPrevSafeBoxHash(),
-		OperationsHash:  block.GetOperationsHash(),
-		Pow:             block.GetPow(),
-	}
-}
-
-func (this *Block) Serialize() SerializedBlock {
-	return SerializedBlock{
-		Header:     this.SerializeHeader(true),
-		Operations: this.Operations,
-	}
 }
 
 func (this *Block) GetOperations() []tx.Tx {

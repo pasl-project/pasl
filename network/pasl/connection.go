@@ -64,7 +64,7 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 		return nil
 	}
 
-	payload := generateHello(0, this.nonce, this.blockchain.GetPendingBlock().SerializeHeader(false), nil, defaults.UserAgent)
+	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(), false), nil, defaults.UserAgent)
 	return this.underlying.sendRequest(hello, payload, this.onHelloCommon)
 }
 
@@ -172,7 +172,7 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 		return nil, err
 	}
 
-	out := generateHello(0, this.nonce, this.blockchain.GetPendingBlock().SerializeHeader(false), nil, defaults.UserAgent)
+	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(), false), nil, defaults.UserAgent)
 	request.result.setError(success)
 	return out, nil
 }
@@ -198,7 +198,7 @@ func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, paylo
 	serialized := make([]safebox.SerializedBlock, total)
 	for index := packet.FromIndex; index <= packet.ToIndex; index++ {
 		if block := this.blockchain.GetBlock(index); block != nil {
-			serialized = append(serialized, block.Serialize())
+			serialized = append(serialized, this.blockchain.SerializeBlock(block))
 		} else {
 			utils.Tracef("[P2P %p] Failed to get block %d", this, index)
 			break

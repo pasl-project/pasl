@@ -61,6 +61,10 @@ func (this *Safebox) GetFork() Fork {
 	return this.fork
 }
 
+func (this *Safebox) GetForkByHeight(height uint32, prevSafeboxHash []byte) Fork {
+	return GetActiveFork(height, prevSafeboxHash)
+}
+
 func (this *Safebox) SetFork(fork Fork) {
 	this.lock.Lock()
 	defer this.lock.Unlock()

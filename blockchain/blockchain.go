@@ -221,6 +221,45 @@ func (this *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte) (
 	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload))
 }
 
+func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {
+	fork := this.safebox.GetForkByHeight(block.GetIndex(), block.GetPrevSafeBoxHash())
+	return fork.GetBlockPow(block)
+}
+
+func (this *Blockchain) SerializeBlockHeader(block safebox.BlockBase, willAppendOperations bool) safebox.SerializedBlockHeader {
+	var headerOnly uint8
+	if willAppendOperations {
+		headerOnly = 2
+	} else {
+		headerOnly = 3
+	}
+	return safebox.SerializedBlockHeader{
+		HeaderOnly: headerOnly,
+		Version: common.Version{
+			Major: 1,
+			Minor: 1,
+		},
+		Index:           block.GetIndex(),
+		Miner:           utils.Serialize(block.GetMiner()),
+		Reward:          block.GetReward(),
+		Fee:             block.GetFee(),
+		Time:            block.GetTimestamp(),
+		Target:          block.GetTarget().GetCompact(),
+		Nonce:           block.GetNonce(),
+		Payload:         block.GetPayload(),
+		PrevSafeboxHash: block.GetPrevSafeBoxHash(),
+		OperationsHash:  block.GetOperationsHash(),
+		Pow:             this.GetBlockPow(block),
+	}
+}
+
+func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.SerializedBlock {
+	return safebox.SerializedBlock{
+		Header:     this.SerializeBlockHeader(block, true),
+		Operations: block.GetOperations(),
+	}
+}
+
 func (this *Blockchain) GetPendingBlock() safebox.BlockBase {
 	return this.getPendingBlock(nil, []byte(""))
 }

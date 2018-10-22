@@ -32,6 +32,7 @@ type Fork interface {
 	CheckBlock(currentTarget common.TargetBase, block BlockBase) error
 	GetNextTarget(currentTarget common.TargetBase, getLastTimestamps GetLastTimestamps) uint32
 	GetBlockHashingBlob(block BlockBase) (template []byte, reservedOffset int, reservedSize int)
+	GetBlockPow(block BlockBase) []byte
 }
 
 type ForkActivator interface {

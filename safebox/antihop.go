@@ -40,9 +40,7 @@ func (this *antiHopDiff) CheckBlock(currentTarget common.TargetBase, block Block
 		return fmt.Errorf("Invalid block #%d target 0x%08x != 0x%08x expected", block.GetIndex(), block.GetTarget().GetCompact(), currentTarget.GetCompact())
 	}
 
-	hashingBlob, _, _ := this.GetBlockHashingBlob(block)
-	hash := sha256.Sum256(hashingBlob)
-	pow := sha256.Sum256(hash[:])
+	pow := this.GetBlockPow(block)
 	if !currentTarget.Check(pow[:]) {
 		return fmt.Errorf("POW check failed %s > %064s", hex.EncodeToString(pow[:]), currentTarget.Get().Text(16))
 	}
@@ -116,4 +114,11 @@ func (this *antiHopDiff) GetBlockHashingBlob(block BlockBase) (template []byte, 
 	})...)
 
 	return toHash, reservedOffset, reservedSize
+}
+
+func (this *antiHopDiff) GetBlockPow(block BlockBase) []byte {
+	hashingBlob, _, _ := this.GetBlockHashingBlob(block)
+	hash := sha256.Sum256(hashingBlob)
+	pow := sha256.Sum256(hash[:])
+	return pow[:]
 }

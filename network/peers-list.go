@@ -30,7 +30,6 @@ import (
 
 type PeersList struct {
 	Connected map[string]*Peer
-	Pending   map[string]*Peer
 	Queued    *ordered_map.OrderedMap
 	Lock      sync.RWMutex
 }
@@ -38,7 +37,6 @@ type PeersList struct {
 func NewPeersList() *PeersList {
 	return &PeersList{
 		Connected: make(map[string]*Peer),
-		Pending:   make(map[string]*Peer),
 		Queued:    ordered_map.NewOrderedMap(),
 	}
 }
@@ -48,9 +46,6 @@ func (this *PeersList) Add(address string) bool {
 	defer this.Lock.Unlock()
 
 	if _, exists := this.Queued.Get(address); exists {
-		return false
-	}
-	if _, exists := this.Pending[address]; exists {
 		return false
 	}
 	if _, exists := this.Connected[address]; exists {
@@ -73,7 +68,7 @@ func (this *PeersList) ScheduleReconnect(maxActive int) []*Peer {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
 
-	active := len(this.Connected) + len(this.Pending)
+	active := len(this.Connected)
 	if active >= maxActive {
 		return result
 	}
@@ -91,7 +86,7 @@ func (this *PeersList) ScheduleReconnect(maxActive int) []*Peer {
 		peer.ReconnectPenalty = utils.MinUint32(defaults.ReconnectionDelayMax, peer.ReconnectPenalty+1)
 
 		this.Queued.Delete(address)
-		this.Pending[address] = peer
+		this.Connected[address] = peer
 
 		result = append(result, peer)
 
@@ -99,13 +94,6 @@ func (this *PeersList) ScheduleReconnect(maxActive int) []*Peer {
 	}
 
 	return result
-}
-
-func (this *PeersList) SetConnected(peer *Peer) {
-	this.Lock.Lock()
-	defer this.Lock.Unlock()
-	delete(this.Pending, peer.Address)
-	this.Connected[peer.Address] = peer
 }
 
 func (this *PeersList) SetDisconnected(peer *Peer) {

@@ -119,7 +119,6 @@ func (node *nodeInternal) AddPeer(network, address string) bool {
 func (node *nodeInternal) Updated() {
 	for _, peer := range node.Peers.ScheduleReconnect((int)(node.Config.MaxOutgoing)) {
 		go func() {
-			node.Peers.SetConnected(peer)
 			defer node.Updated()
 			defer node.Peers.SetDisconnected(peer)
 

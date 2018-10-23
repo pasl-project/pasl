@@ -58,3 +58,17 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 		Ver_a:       blockMeta.GetVersion().Minor,
 	}, nil
 }
+
+func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 }) (*network.Account, error) {
+	account := this.blockchain.GetAccount(params.Account)
+	if account == nil {
+		return nil, errors.New("Not found")
+	}
+	return &network.Account{
+		Account:     account.Number,
+		Balance:     account.Balance,
+		Enc_pubkey:  hex.EncodeToString(utils.Serialize(account.PublicKey.Serialized())),
+		N_operation: account.Operations,
+		Updated_b:   account.UpdatedIndex,
+	}, nil
+}

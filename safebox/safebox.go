@@ -153,6 +153,19 @@ func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {
 	return timestamps
 }
 
+func (this *Safebox) GetAccount(number uint32) *accounter.Account {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	height, _ := this.getStateUnsafe()
+	accountPack := number / uint32(defaults.AccountsPerBlock)
+	if accountPack+defaults.MaturationHeight < height {
+		account := *this.accounter.GetAccount(number)
+		return &account
+	}
+	return nil
+}
+
 func getReward(index uint32) uint64 {
 	magnitude := uint64(index / defaults.RewardDecreaseBlocks)
 	reward := defaults.GenesisReward

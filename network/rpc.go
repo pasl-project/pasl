@@ -58,6 +58,7 @@ func WithRpcServer(hostPort string, api Api, callback func() error) error {
 		assigner := jrpc2.MapAssigner{
 			"getblockcount": jrpc2.NewHandler(api.GetBlockCount),
 			"getblock":      jrpc2.NewHandler(api.GetBlock),
+			"getaccount":    jrpc2.NewHandler(api.GetAccount),
 		}
 
 		headers := http.Header{}

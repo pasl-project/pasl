@@ -321,3 +321,7 @@ func (this *Blockchain) GetBlock(index uint32) safebox.BlockBase {
 func (this *Blockchain) GetState() (height uint32, safeboxHash []byte) {
 	return this.safebox.GetState()
 }
+
+func (this *Blockchain) GetAccount(number uint32) *accounter.Account {
+	return this.safebox.GetAccount(number)
+}

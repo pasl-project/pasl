@@ -103,6 +103,7 @@ func main() {
 					c := make(chan os.Signal, 2)
 					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 					<-c
+					utils.Tracef("Exit signal received. Terminating...")
 					return nil
 				})
 			})

@@ -94,10 +94,11 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 			}
 
 			wg.Add(1)
-			go func() {
+			go func(conn net.Conn) {
 				defer wg.Done()
-				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false, ctx.Done())
-			}()
+
+				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false, ctx)
+			}(conn)
 		}
 	})
 	defer handler.StopAndWaitForever()
@@ -122,12 +123,14 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 					defer wg.Done()
 					defer node.Peers.SetDisconnected(peer)
 
-					conn, err := net.DialTimeout("tcp", address, node.Config.TimeoutConnect)
+					d := net.Dialer{Timeout: node.Config.TimeoutConnect}
+					conn, err := d.DialContext(ctx, "tcp", address)
 					if err != nil {
 						utils.Tracef("Connection failed: %v", err)
 						return
 					}
-					node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), true, ctx.Done())
+
+					node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), true, ctx)
 				}(peer.Address)
 			}
 		}
@@ -145,29 +148,33 @@ func (node *nodeInternal) AddPeer(network, address string) bool {
 	return node.Peers.Add(address)
 }
 
-func (node *nodeInternal) HandleConnection(conn io.ReadWriteCloser, address string, isOutgoing bool, done <-chan struct{}) {
-	defer conn.Close()
-
-	context, err := node.Manager.OnOpen(address, conn, isOutgoing)
+func (node *nodeInternal) HandleConnection(conn net.Conn, address string, isOutgoing bool, ctx context.Context) {
+	link, err := node.Manager.OnOpen(address, conn, isOutgoing)
 	if err != nil {
 		utils.Tracef("OnOpen failed: %v", err)
 		return
 	}
-	defer node.Manager.OnClose(context)
+	defer node.Manager.OnClose(link)
+
+	stopper := concurrent.NewUnboundedExecutor()
+	stopper.Go(func(localContext context.Context) {
+		defer conn.Close()
+		select {
+		case <-ctx.Done():
+			break
+		case <-localContext.Done():
+			break
+		}
+	})
+	defer stopper.StopAndWaitForever()
 
 	buf := make([]byte, 10*1024)
 	for {
-		select {
-		case <-done:
-			return
-		default:
-			break
-		}
 		read, err := conn.Read(buf)
 		if err != nil {
 			break
 		}
-		if err = node.Manager.OnData(context, buf[:read]); err != nil {
+		if err = node.Manager.OnData(link, buf[:read]); err != nil {
 			utils.Tracef("OnData failed: %v", err)
 			break
 		}

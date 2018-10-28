@@ -56,10 +56,11 @@ func WithRpcServer(hostPort string, api Api, callback func() error) error {
 	rpcServer := concurrent.NewUnboundedExecutor()
 	rpcServer.Go(func(ctx context.Context) {
 		assigner := jrpc2.MapAssigner{
-			"getblockcount": jrpc2.NewHandler(api.GetBlockCount),
-			"getblock":      jrpc2.NewHandler(api.GetBlock),
-			"getaccount":    jrpc2.NewHandler(api.GetAccount),
-			"getpendings":   jrpc2.NewHandler(api.GetPending),
+			"getblockcount":     jrpc2.NewHandler(api.GetBlockCount),
+			"getblock":          jrpc2.NewHandler(api.GetBlock),
+			"getaccount":        jrpc2.NewHandler(api.GetAccount),
+			"getpendings":       jrpc2.NewHandler(api.GetPending),
+			"executeoperations": jrpc2.NewHandler(api.ExecuteOperations),
 		}
 
 		headers := http.Header{}

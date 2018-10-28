@@ -50,6 +50,10 @@ type SerializedBlock struct {
 	Operations []tx.Tx
 }
 
+type SerializedOperations struct {
+	Operations []tx.Tx
+}
+
 type BlockBase interface {
 	GetIndex() uint32
 	GetMiner() *crypto.Public

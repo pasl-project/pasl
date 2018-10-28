@@ -51,4 +51,5 @@ type Api interface {
 	GetBlock(ctx context.Context, params *struct{ Block uint32 }) (*Block, error)
 	GetAccount(ctx context.Context, params *struct{ Account uint32 }) (*Account, error)
 	GetPending(ctx context.Context) ([]Operation, error)
+	ExecuteOperations(ctx context.Context, params *struct{ RawOperations string }) (bool, error)
 }

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
+
+	"github.com/pasl-project/pasl/safebox"
 
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/utils"
@@ -93,4 +96,30 @@ func (this *Api) GetPending(ctx context.Context) ([]network.Operation, error) {
 		})
 	}
 	return response, nil
+}
+
+func (this *Api) ExecuteOperations(ctx context.Context, params *struct{ RawOperations string }) (bool, error) {
+	rawOperations, err := hex.DecodeString(params.RawOperations)
+	if err != nil {
+		utils.Tracef("Error: %v", err)
+		return false, errors.New("Failed to decode hex inout")
+	}
+
+	operationsSet := safebox.SerializedOperations{}
+	if err := utils.Deserialize(&operationsSet, bytes.NewBuffer(rawOperations)); err != nil {
+		utils.Tracef("Error: %v", err)
+		return false, errors.New("Failed to deserialize operations set")
+	}
+
+	any := false
+	for _, tx := range operationsSet.Operations {
+		_, err := this.blockchain.AddOperation(&tx)
+		if err != nil {
+			utils.Tracef("Error: %v", err)
+		} else if !any {
+			any = true
+		}
+	}
+
+	return true, nil
 }

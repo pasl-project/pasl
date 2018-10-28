@@ -43,7 +43,12 @@ const (
 )
 
 type commonOperation interface {
+	GetAmount() uint64
+	GetAccount() uint32
+	GetDestAccount() uint32
 	GetFee() uint64
+	GetPayload() []byte
+
 	Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 	Apply(index uint32, context interface{}) (map[uint32][]accounter.Micro, error)
 

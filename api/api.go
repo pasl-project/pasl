@@ -72,3 +72,25 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 		Updated_b:   account.UpdatedIndex,
 	}, nil
 }
+
+func (this *Api) GetPending(ctx context.Context) ([]network.Operation, error) {
+	txes := this.blockchain.GetTxPool()
+	response := make([]network.Operation, 0)
+	for _, tx := range txes {
+		response = append(response, network.Operation{
+			Account:        tx.GetAccount(),
+			Amount:         tx.GetAmount(),
+			Block:          0,
+			Dest_account:   tx.GetDestAccount(),
+			Fee:            tx.GetFee(),
+			Opblock:        0, // TODO: consider to drop the field
+			Ophash:         tx.GetTxIdString(),
+			Optxt:          "", // TODO: consider to drop the field
+			Optype:         uint8(tx.Type),
+			Payload:        hex.EncodeToString(tx.GetPayload()),
+			Sender_account: tx.GetAccount(),
+			Time:           0,
+		})
+	}
+	return response, nil
+}

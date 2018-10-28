@@ -55,8 +55,24 @@ type transferToSign struct {
 	Public      crypto.PublicSerializedPlain
 }
 
+func (this *Transfer) GetAccount() uint32 {
+	return this.Source
+}
+
+func (this *Transfer) GetAmount() uint64 {
+	return this.Amount
+}
+
+func (this *Transfer) GetDestAccount() uint32 {
+	return this.Destination
+}
+
 func (this *Transfer) GetFee() uint64 {
 	return this.Fee
+}
+
+func (this *Transfer) GetPayload() []byte {
+	return this.Payload
 }
 
 func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {

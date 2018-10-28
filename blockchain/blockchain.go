@@ -264,6 +264,15 @@ func (this *Blockchain) GetPendingBlock() safebox.BlockBase {
 	return this.getPendingBlock(nil, []byte(""))
 }
 
+func (this *Blockchain) GetTxPool() []tx.Tx {
+	operations := make([]tx.Tx, 0)
+	this.txPool.Range(func(key, value interface{}) bool {
+		operations = append(operations, value.(tx.Tx))
+		return true
+	})
+	return operations
+}
+
 func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte) safebox.BlockBase {
 	var minerSerialized []byte
 	if miner == nil {

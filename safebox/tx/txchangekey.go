@@ -53,8 +53,24 @@ type changeKeyToSign struct {
 	NewPublic []byte
 }
 
+func (this *ChangeKey) GetAccount() uint32 {
+	return this.Source
+}
+
+func (this *ChangeKey) GetAmount() uint64 {
+	return 0
+}
+
+func (this *ChangeKey) GetDestAccount() uint32 {
+	return this.Source
+}
+
 func (this *ChangeKey) GetFee() uint64 {
 	return this.Fee
+}
+
+func (this *ChangeKey) GetPayload() []byte {
+	return this.Payload
 }
 
 func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {

@@ -42,11 +42,8 @@ type Storage struct {
 	accountsCache    map[uint32][]byte
 }
 
-func WithStorage(dataDir *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
-	if err := utils.CreateDirectory(dataDir); err != nil {
-		return err
-	}
-	db, err := bolt.Open(filepath.Join(*dataDir, "storage.db"), 0600, nil)
+func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
+	db, err := bolt.Open(*filename, 0600, nil)
 	if err != nil {
 		return err
 	}

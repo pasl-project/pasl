@@ -34,6 +34,11 @@ const (
 	accountsCacheLimit = 1000
 )
 
+const (
+	tableAccount   = "account"
+	tableBlock     = "block"
+)
+
 type Storage struct {
 	db               *bolt.DB
 	accountsPerBlock uint32
@@ -64,12 +69,12 @@ func (this *Storage) Load(callback func(number uint32, serialized []byte) error)
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
-		if bucket = tx.Bucket([]byte("blocks")); bucket == nil {
+		if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
 			return nil
 		}
 		height = uint32(bucket.Stats().KeyN)
 
-		if bucket = tx.Bucket([]byte("accounts")); bucket == nil {
+		if bucket = tx.Bucket([]byte(tableAccount)); bucket == nil {
 			return nil
 		}
 		cursor := bucket.Cursor()
@@ -126,7 +131,7 @@ func (this *Storage) flush() error {
 
 		err = (func() error {
 			var bucket *bolt.Bucket
-			if bucket, err = tx.CreateBucketIfNotExists([]byte("blocks")); err != nil {
+			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableBlock)); err != nil {
 				return err
 			}
 
@@ -138,7 +143,7 @@ func (this *Storage) flush() error {
 				}
 			}
 
-			if bucket, err = tx.CreateBucketIfNotExists([]byte("accounts")); err != nil {
+			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableAccount)); err != nil {
 				return err
 			}
 
@@ -174,7 +179,7 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
-		if bucket = tx.Bucket([]byte("blocks")); bucket == nil {
+		if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
 			return nil
 		}
 		var indexBuf [4]byte

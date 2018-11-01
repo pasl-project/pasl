@@ -20,9 +20,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package storage
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"sync"
 
 	"github.com/boltdb/bolt"
@@ -30,13 +31,17 @@ import (
 )
 
 const (
-	blocksCacheLimit   = 50
-	accountsCacheLimit = 1000
+	blocksCacheLimit      = 50
+	accountsCacheLimit    = 1000
+	txesCacheLimit        = 100
+	accountTxesCacheLimit = 100
 )
 
 const (
 	tableAccount   = "account"
 	tableBlock     = "block"
+	tableTx        = "tx"
+	tableAccountTx = "accountTx"
 )
 
 type Storage struct {
@@ -45,6 +50,8 @@ type Storage struct {
 	lock             sync.RWMutex
 	blocksCache      map[uint32][]byte
 	accountsCache    map[uint32][]byte
+	txesCache        map[[20]byte][]byte
+	accountTxesCache map[[8]byte][20]byte
 }
 
 func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
@@ -59,6 +66,8 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Sto
 		accountsPerBlock: accountsPerBlock,
 		blocksCache:      make(map[uint32][]byte),
 		accountsCache:    make(map[uint32][]byte),
+		txesCache:        make(map[[20]byte][]byte),
+		accountTxesCache: make(map[[8]byte][20]byte),
 	}
 
 	defer storage.flush()
@@ -98,7 +107,7 @@ func (this *Storage) Load(callback func(number uint32, serialized []byte) error)
 	return
 }
 
-func (this *Storage) Store(index uint32, data []byte, affectedAccounts func(func(number uint32, data []byte) error) error) error {
+func (this *Storage) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error {
 	flush := false
 
 	func() {
@@ -108,13 +117,26 @@ func (this *Storage) Store(index uint32, data []byte, affectedAccounts func(func
 		this.blocksCache[index] = make([]byte, len(data))
 		copy(this.blocksCache[index], data)
 
+		txes(func(txRipemd160Hash [20]byte, txData []byte) {
+			this.txesCache[txRipemd160Hash] = make([]byte, len(txData))
+			copy(this.txesCache[txRipemd160Hash], txData)
+		})
+		accountOperations(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte) {
+			numberAndId := [8]byte{}
+			binary.BigEndian.PutUint32(numberAndId[0:4], number)
+			binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
+			this.accountTxesCache[numberAndId] = txRipemd160Hash
+		})
 		affectedAccounts(func(number uint32, data []byte) (err error) {
 			this.accountsCache[number] = make([]byte, len(data))
 			copy(this.accountsCache[number], data)
 			return
 		})
 
-		flush = len(this.blocksCache) > blocksCacheLimit || len(this.accountsCache) > accountsCacheLimit
+		flush = len(this.blocksCache) > blocksCacheLimit
+		flush = flush || len(this.accountsCache) > accountsCacheLimit
+		flush = flush || len(this.txesCache) > txesCacheLimit
+		flush = flush || len(this.accountTxesCache) > accountTxesCacheLimit
 	}()
 
 	if flush {
@@ -154,6 +176,26 @@ func (this *Storage) flush() error {
 				}
 			}
 
+			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableTx)); err != nil {
+				return err
+			}
+
+			for txRipemd160Hash, data := range this.txesCache {
+				if err = bucket.Put(txRipemd160Hash[:], data); err != nil {
+					return err
+				}
+			}
+
+			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableAccountTx)); err != nil {
+				return err
+			}
+
+			for accountAndId, txRipemd160Hash := range this.accountTxesCache {
+				if err = bucket.Put(accountAndId[:], txRipemd160Hash[:]); err != nil {
+					return err
+				}
+			}
+
 			return nil
 		})()
 		if err != nil {
@@ -186,6 +228,73 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 		binary.BigEndian.PutUint32(indexBuf[:], index)
 		if data = bucket.Get(indexBuf[:]); data == nil {
 			return fmt.Errorf("Failed to get block #%d", index)
+		}
+		return nil
+	})
+	return
+}
+
+func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
+	this.lock.RLock()
+	data = this.txesCache[txRipemd160Hash]
+	this.lock.RUnlock()
+	if data != nil {
+		return data, nil
+	}
+
+	err = this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
+			return nil
+		}
+		if data = bucket.Get(txRipemd160Hash[:]); data == nil {
+			return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
+		}
+		return nil
+	})
+	return
+}
+
+func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte, err error) {
+	txHashes = make(map[uint32][20]byte)
+	this.lock.RLock()
+	var current uint32
+	var operationId uint32
+	for numberAndId, txRipemd160Hash := range this.accountTxesCache {
+		current = binary.BigEndian.Uint32(numberAndId[0:4])
+		operationId = binary.BigEndian.Uint32(numberAndId[4:8])
+		if current == number {
+			txHashes[operationId] = txRipemd160Hash
+		}
+	}
+	this.lock.RUnlock()
+
+	err = this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tableAccountTx)); bucket == nil {
+			return nil
+		}
+
+		var buf [4]byte
+		binary.BigEndian.PutUint32(buf[:], number)
+
+		c := bucket.Cursor()
+		var txRipemd160Hash [20]byte
+		for k, v := c.Seek(buf[:]); k != nil; k, v = c.Next() {
+			numberAndId := bytes.NewBuffer(k)
+			if err := binary.Read(numberAndId, binary.BigEndian, &current); err != nil {
+				utils.Panicf("Failed to unpack account number: %v", err)
+			}
+			if err := binary.Read(numberAndId, binary.BigEndian, &operationId); err != nil {
+				utils.Panicf("Failed to unpack account number: %v", err)
+			}
+			if current != number {
+				break
+			}
+			copy(txRipemd160Hash[:], v)
+			txHashes[operationId] = txRipemd160Hash
 		}
 		return nil
 	})

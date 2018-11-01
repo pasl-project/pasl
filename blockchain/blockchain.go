@@ -152,7 +152,7 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		return errors.New("Invalid block: " + err.Error())
 	}
 
-	newSafebox, updatedAccounts, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
+	newSafebox, updatedAccounts, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,30 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		newSafebox.SetFork(fork)
 	}
 
-	err = this.storage.Store(block.GetIndex(), utils.Serialize(meta), func(fn func(number uint32, data []byte) error) error {
+	err = this.storage.Store(
+		block.GetIndex(),
+		utils.Serialize(meta),
+		func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
+			txRipemd160Hash := [20]byte{}
+			for _, tx := range block.GetOperations() {
+
+				serialized := bytes.NewBuffer([]byte(""))
+				err := tx.Serialize(serialized)
+				if err != nil {
+					utils.Panicf("Failed to serailize tx")
+				}
+				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+				txes(txRipemd160Hash, serialized.Bytes())
+			}
+		},
+		func(accountOperations func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)) {
+			txRipemd160Hash := [20]byte{}
+			for account, tx := range affectedByTx {
+				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+				accountOperations(account.Number, account.OperationsTotal, txRipemd160Hash)
+			}
+		},
+		func(fn func(number uint32, data []byte) error) error {
 		for _, account := range updatedAccounts {
 			if err := fn(account.Number, utils.Serialize(account)); err != nil {
 				return err

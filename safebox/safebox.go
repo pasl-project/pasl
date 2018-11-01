@@ -88,7 +88,7 @@ func (this *Safebox) Validate(operation *tx.Tx) error {
 	return err
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.Account, error) {
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.Account, map[*accounter.Account]*tx.Tx, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -115,22 +115,25 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		return nil
 	}
 
+	affectedByTxes := make(map[*accounter.Account]*tx.Tx)
 	for _, it := range operations {
 		context, err := it.Validate(getMaturedAccountUnsafe)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		accountsAffected, err := it.Apply(height, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, number := range accountsAffected {
 			this.accounter.MarkAccountDirty(number)
-			updatedAccounts = append(updatedAccounts, this.accounter.GetAccount(number))
+			account := this.accounter.GetAccount(number)
+			affectedByTxes[account] = &it
+			updatedAccounts = append(updatedAccounts, account)
 		}
 	}
 
-	return newSafebox, updatedAccounts, nil
+	return newSafebox, updatedAccounts, affectedByTxes, nil
 }
 
 func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {

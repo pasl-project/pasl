@@ -187,13 +187,13 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 			}
 		},
 		func(fn func(number uint32, data []byte) error) error {
-		for _, account := range updatedAccounts {
-			if err := fn(account.Number, utils.Serialize(account)); err != nil {
-				return err
+			for _, account := range updatedAccounts {
+				if err := fn(account.Number, utils.Serialize(account)); err != nil {
+					return err
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
 	if err != nil {
 		utils.Tracef("Error storing blockchain state: %v", err)
 		return err
@@ -356,4 +356,14 @@ func (this *Blockchain) GetState() (height uint32, safeboxHash []byte) {
 
 func (this *Blockchain) GetAccount(number uint32) *accounter.Account {
 	return this.safebox.GetAccount(number)
+}
+
+func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) *tx.Tx {
+	serialized, err := this.storage.GetTx(txRipemd160Hash)
+	if err != nil {
+		return nil
+	}
+	var tx tx.Tx
+	tx.Deserialize(bytes.NewBuffer(serialized))
+	return &tx
 }

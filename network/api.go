@@ -52,4 +52,5 @@ type Api interface {
 	GetAccount(ctx context.Context, params *struct{ Account uint32 }) (*Account, error)
 	GetPending(ctx context.Context) ([]Operation, error)
 	ExecuteOperations(ctx context.Context, params *struct{ RawOperations string }) (bool, error)
+	FindOperation(ctx context.Context, params *struct{ Ophash string }) (*Operation, error)
 }

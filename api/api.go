@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 
+	"github.com/pasl-project/pasl/safebox/tx"
+
 	"github.com/pasl-project/pasl/safebox"
 
 	"github.com/pasl-project/pasl/blockchain"
@@ -76,24 +78,28 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 	}, nil
 }
 
+func txToNetwork(tx *tx.Tx) network.Operation {
+	return network.Operation{
+		Account:        tx.GetAccount(),
+		Amount:         tx.GetAmount(),
+		Block:          0,
+		Dest_account:   tx.GetDestAccount(),
+		Fee:            tx.GetFee(),
+		Opblock:        0, // TODO: consider to drop the field
+		Ophash:         tx.GetTxIdString(),
+		Optxt:          "", // TODO: consider to drop the field
+		Optype:         uint8(tx.Type),
+		Payload:        hex.EncodeToString(tx.GetPayload()),
+		Sender_account: tx.GetAccount(),
+		Time:           0,
+	}
+}
+
 func (this *Api) GetPending(ctx context.Context) ([]network.Operation, error) {
 	txes := this.blockchain.GetTxPool()
 	response := make([]network.Operation, 0)
 	for _, tx := range txes {
-		response = append(response, network.Operation{
-			Account:        tx.GetAccount(),
-			Amount:         tx.GetAmount(),
-			Block:          0,
-			Dest_account:   tx.GetDestAccount(),
-			Fee:            tx.GetFee(),
-			Opblock:        0, // TODO: consider to drop the field
-			Ophash:         tx.GetTxIdString(),
-			Optxt:          "", // TODO: consider to drop the field
-			Optype:         uint8(tx.Type),
-			Payload:        hex.EncodeToString(tx.GetPayload()),
-			Sender_account: tx.GetAccount(),
-			Time:           0,
-		})
+		response = append(response, txToNetwork(&tx))
 	}
 	return response, nil
 }
@@ -122,4 +128,19 @@ func (this *Api) ExecuteOperations(ctx context.Context, params *struct{ RawOpera
 	}
 
 	return true, nil
+}
+
+func (this *Api) FindOperation(ctx context.Context, params *struct{ Ophash string }) (*network.Operation, error) {
+	ophash, err := hex.DecodeString(params.Ophash)
+	if err != nil {
+		return nil, errors.New("Failed to decode ophash")
+	}
+	var txRipemd160Hash [20]byte
+	copy(txRipemd160Hash[:], ophash[12:])
+	tx := this.blockchain.GetOperation(txRipemd160Hash)
+	if tx == nil {
+		return nil, errors.New("Not found")
+	}
+	operation := txToNetwork(tx)
+	return &operation, nil
 }

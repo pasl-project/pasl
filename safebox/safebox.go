@@ -120,11 +120,11 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		if err != nil {
 			return nil, nil, err
 		}
-		historyPack, err := it.Apply(height, context)
+		accountsAffected, err := it.Apply(height, context)
 		if err != nil {
 			return nil, nil, err
 		}
-		for number := range historyPack {
+		for _, number := range accountsAffected {
 			this.accounter.MarkAccountDirty(number)
 			updatedAccounts = append(updatedAccounts, this.accounter.GetAccount(number))
 		}

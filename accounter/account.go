@@ -20,11 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package accounter
 
 import (
-	"encoding/hex"
-	"strconv"
-
 	"github.com/pasl-project/pasl/crypto"
-	"github.com/pasl-project/pasl/utils"
 )
 
 type Account struct {
@@ -58,52 +54,14 @@ func (this *Account) GetTimestamp() uint32 {
 	return this.Timestamp
 }
 
-func (this *Account) BalanceSub(amount uint64, index uint32) []Micro {
-	newBalance := this.Balance - amount
-	newOperations := this.Operations + 1
-
-	result := []Micro{
-		Micro{
-			Opcode:   CompareSwapBalance,
-			ValueOld: strconv.FormatUint(this.Balance, 10),
-			ValueNew: strconv.FormatUint(newBalance, 10),
-		},
-		Micro{
-			Opcode:   CompareSwapUpdatedIndex,
-			ValueOld: strconv.FormatUint(uint64(this.UpdatedIndex), 10),
-			ValueNew: strconv.FormatUint(uint64(index), 10),
-		},
-		Micro{
-			Opcode:   CompareSwapOperations,
-			ValueOld: strconv.FormatUint(uint64(this.Operations), 10),
-			ValueNew: strconv.FormatUint(uint64(newOperations), 10),
-		},
-	}
-
-	this.Balance = newBalance
+func (this *Account) BalanceSub(amount uint64, index uint32) {
+	this.Balance = this.Balance - amount
 	this.UpdatedIndex = index
-	this.Operations = newOperations
-
-	return result
+	this.Operations = this.Operations + 1
 }
 
-func (this *Account) BalanceAdd(amount uint64, index uint32) []Micro {
-	newBalance := this.Balance + amount
-
-	result := []Micro{
-		Micro{
-			Opcode:   CompareSwapBalance,
-			ValueOld: strconv.FormatUint(this.Balance, 10),
-			ValueNew: strconv.FormatUint(newBalance, 10),
-		},
-		Micro{
-			Opcode:   CompareSwapUpdatedIndex,
-			ValueOld: strconv.FormatUint(uint64(this.UpdatedIndex), 10),
-			ValueNew: strconv.FormatUint(uint64(index), 10),
-		},
-	}
-
-	this.Balance = newBalance
+func (this *Account) BalanceAdd(amount uint64, index uint32) {
+	this.Balance = this.Balance + amount
 	this.UpdatedIndex = index
 
 	return result
@@ -123,6 +81,7 @@ func (this *Account) KeyChange(key *crypto.Public, index uint32) []Micro {
 		},
 	}
 
+func (this *Account) KeyChange(key *crypto.Public, index uint32) {
 	this.PublicKey = *key
 	this.UpdatedIndex = index
 

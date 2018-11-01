@@ -90,13 +90,12 @@ func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Accoun
 	return &changeKeyContext{source, public}, nil
 }
 
-func (this *ChangeKey) Apply(index uint32, context interface{}) (map[uint32][]accounter.Micro, error) {
-	result := make(map[uint32][]accounter.Micro)
-
+func (this *ChangeKey) Apply(index uint32, context interface{}) ([]uint32, error) {
 	params := context.(*changeKeyContext)
-	result[params.Source.Number] = params.Source.KeyChange(params.NewPublic, index)
-	result[params.Source.Number] = append(result[params.Source.Number], params.Source.BalanceSub(this.Fee, index)...)
-	return result, nil
+	params.Source.KeyChange(params.NewPublic, index)
+	params.Source.BalanceSub(this.Fee, index)
+
+	return []uint32{params.Source.Number}, nil
 }
 
 func (this *ChangeKey) Serialize(w io.Writer) error {

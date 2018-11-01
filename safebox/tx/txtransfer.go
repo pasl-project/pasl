@@ -101,13 +101,12 @@ func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account
 	return &transferContext{source, destination}, nil
 }
 
-func (this *Transfer) Apply(index uint32, context interface{}) (map[uint32][]accounter.Micro, error) {
+func (this *Transfer) Apply(index uint32, context interface{}) ([]uint32, error) {
 	params := context.(*transferContext)
+	params.Source.BalanceSub(this.Amount+this.Fee, index)
+	params.Destination.BalanceAdd(this.Amount, index)
 
-	result := make(map[uint32][]accounter.Micro)
-	result[params.Source.Number] = params.Source.BalanceSub(this.Amount+this.Fee, index)
-	result[params.Destination.Number] = params.Destination.BalanceAdd(this.Amount, index)
-	return result, nil
+	return []uint32{params.Source.Number, params.Destination.Number}, nil
 }
 
 func (this *Transfer) Serialize(w io.Writer) error {

@@ -50,7 +50,7 @@ type commonOperation interface {
 	GetPayload() []byte
 
 	Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
-	Apply(index uint32, context interface{}) (map[uint32][]accounter.Micro, error)
+	Apply(index uint32, context interface{}) ([]uint32, error)
 
 	Serialize(w io.Writer) error
 

@@ -91,7 +91,7 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 	return this.commonOperation.Validate(getAccount)
 }
 
-func (this *Tx) GetTxId() []byte {
+func (this *Tx) GetRipemd16Hash() []byte {
 	type toHash struct {
 		ToSign utils.Serializable
 		R      utils.Serializable
@@ -111,9 +111,13 @@ func (this *Tx) GetTxId() []byte {
 
 	hash := ripemd160.New()
 	if _, err := hash.Write(buffer); err != nil {
-		return nil
+		utils.Panicf("Failed to produce Ripemd-160 hash")
 	}
 
+	return []byte(strings.ToUpper(hex.EncodeToString(hash.Sum([]byte("")))[:20]))
+}
+
+func (this *Tx) GetTxId() []byte {
 	type txId struct {
 		Reserved    uint32
 		Source      uint32
@@ -127,7 +131,7 @@ func (this *Tx) GetTxId() []byte {
 		Source:      source,
 		OperationId: operationId,
 		Hash: &utils.BytesWithoutLengthPrefix{
-			Bytes: []byte(strings.ToUpper(hex.EncodeToString(hash.Sum([]byte("")))[:20])),
+			Bytes: this.GetRipemd16Hash(),
 		},
 	})
 }

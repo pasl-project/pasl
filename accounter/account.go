@@ -24,12 +24,13 @@ import (
 )
 
 type Account struct {
-	Number       uint32
-	PublicKey    crypto.Public
-	Balance      uint64
-	UpdatedIndex uint32
-	Operations   uint32
-	Timestamp    uint32
+	Number          uint32
+	PublicKey       crypto.Public
+	Balance         uint64
+	UpdatedIndex    uint32
+	Operations      uint32
+	OperationsTotal uint32
+	Timestamp       uint32
 }
 
 type AccountHashBuffer struct {
@@ -58,32 +59,17 @@ func (this *Account) BalanceSub(amount uint64, index uint32) {
 	this.Balance = this.Balance - amount
 	this.UpdatedIndex = index
 	this.Operations = this.Operations + 1
+	this.OperationsTotal = this.OperationsTotal + 1
 }
 
 func (this *Account) BalanceAdd(amount uint64, index uint32) {
 	this.Balance = this.Balance + amount
 	this.UpdatedIndex = index
-
-	return result
+	this.OperationsTotal = this.OperationsTotal + 1
 }
-
-func (this *Account) KeyChange(key *crypto.Public, index uint32) []Micro {
-	result := []Micro{
-		Micro{
-			Opcode:   CompareSwapKey,
-			ValueOld: hex.EncodeToString(utils.Serialize(&this.PublicKey)),
-			ValueNew: hex.EncodeToString(utils.Serialize(key)),
-		},
-		Micro{
-			Opcode:   CompareSwapUpdatedIndex,
-			ValueOld: strconv.FormatUint(uint64(this.UpdatedIndex), 10),
-			ValueNew: strconv.FormatUint(uint64(index), 10),
-		},
-	}
 
 func (this *Account) KeyChange(key *crypto.Public, index uint32) {
 	this.PublicKey = *key
 	this.UpdatedIndex = index
-
-	return result
+	this.OperationsTotal = this.OperationsTotal + 1
 }

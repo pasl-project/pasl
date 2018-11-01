@@ -57,12 +57,13 @@ func NewPack(index uint32, miner *crypto.Public, timestamp uint32) packBase {
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i, _ := range accounts {
 		accounts[i] = &Account{
-			Number:       number,
-			PublicKey:    *miner,
-			Balance:      0,
-			UpdatedIndex: index,
-			Operations:   0,
-			Timestamp:    timestamp,
+			Number:          number,
+			PublicKey:       *miner,
+			Balance:         0,
+			UpdatedIndex:    index,
+			Operations:      0,
+			OperationsTotal: 0,
+			Timestamp:       timestamp,
 		}
 		number++
 	}

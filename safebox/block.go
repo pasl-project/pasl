@@ -138,11 +138,12 @@ func NewBlock(meta *BlockMetadata) (BlockBase, error) {
 	var i uint32
 	for i = 0; i < uint32(len(block.Accounts)); i++ {
 		block.Accounts[i] = accounter.Account{
-			Number:       i + block.GetIndex(),
-			PublicKey:    *block.GetMiner(),
-			Balance:      0,
-			UpdatedIndex: block.GetIndex(),
-			Operations:   0,
+			Number:          i + block.GetIndex(),
+			PublicKey:       *block.GetMiner(),
+			Balance:         0,
+			UpdatedIndex:    block.GetIndex(),
+			Operations:      0,
+			OperationsTotal: 0,
 		}
 	}
 

@@ -25,18 +25,18 @@ import (
 
 func TestReward(t *testing.T) {
 	if getReward(0) != 500000 {
-		t.FailNow()
+		t.Fatal()
 	}
 
 	if getReward(420479) != 500000 {
-		t.FailNow()
+		t.Fatal()
 	}
 
 	if getReward(420480) != 250000 {
-		t.FailNow()
+		t.Fatal()
 	}
 
 	if getReward(1000000000) != 10000 {
-		t.FailNow()
+		t.Fatal()
 	}
 }

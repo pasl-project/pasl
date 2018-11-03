@@ -122,39 +122,39 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool) error {
+func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool) (safebox.BlockBase, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	block, err := safebox.NewBlock(meta)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// TODO: block.Header.Time, implement NAT
 	// TODO: check block hash for genesis block
 	height, safeboxHash := this.safebox.GetState()
 	if height != block.GetIndex() {
-		return nil
+		return nil, nil
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
 		if parentNotFound != nil {
 			*parentNotFound = true
 		}
-		return fmt.Errorf("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
+		return nil, fmt.Errorf("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
 	}
 
 	lastTimestamps := this.safebox.GetLastTimestamps(1)
 	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return errors.New("Invalid timestamp")
+		return nil, errors.New("Invalid timestamp")
 	}
 	if err := this.safebox.GetFork().CheckBlock(this.target, block); err != nil {
-		return errors.New("Invalid block: " + err.Error())
+		return nil, errors.New("Invalid block: " + err.Error())
 	}
 
 	newSafebox, updatedAccounts, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	newHeight, _ := newSafebox.GetState()
@@ -195,16 +195,16 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		})
 	if err != nil {
 		utils.Tracef("Error storing blockchain state: %v", err)
-		return err
+		return nil, err
 	}
 
 	this.txPoolCleanUpUnsafe(block.GetOperations())
 	this.target.Set(newSafebox.GetFork().GetNextTarget(this.target, newSafebox.GetLastTimestamps))
 	this.safebox = newSafebox
-	return nil
+	return block, nil
 }
 
-func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, parentNotFound *bool) error {
+func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, parentNotFound *bool) (safebox.BlockBase, error) {
 	return this.AddBlock(&safebox.BlockMetadata{
 		Index:           block.Header.Index,
 		Miner:           block.Header.Miner,
@@ -240,7 +240,7 @@ func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.Tx) {
 }
 
 func (this *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte) (template []byte, reservedOffset int, reservedSize int) {
-	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload))
+	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload, uint32(time.Now().Unix())))
 }
 
 func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {
@@ -248,12 +248,18 @@ func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {
 	return fork.GetBlockPow(block)
 }
 
-func (this *Blockchain) SerializeBlockHeader(block safebox.BlockBase, willAppendOperations bool) safebox.SerializedBlockHeader {
+func (this *Blockchain) SerializeBlockHeader(block safebox.BlockBase, willAppendOperations bool, nullPow bool) safebox.SerializedBlockHeader {
 	var headerOnly uint8
 	if willAppendOperations {
 		headerOnly = 2
 	} else {
 		headerOnly = 3
+	}
+	var pow []byte
+	if !nullPow {
+		pow = this.GetBlockPow(block)
+	} else {
+		pow = make([]byte, 32)
 	}
 	return safebox.SerializedBlockHeader{
 		HeaderOnly: headerOnly,
@@ -271,19 +277,25 @@ func (this *Blockchain) SerializeBlockHeader(block safebox.BlockBase, willAppend
 		Payload:         block.GetPayload(),
 		PrevSafeboxHash: block.GetPrevSafeBoxHash(),
 		OperationsHash:  block.GetOperationsHash(),
-		Pow:             this.GetBlockPow(block),
+		Pow:             pow,
 	}
 }
 
 func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.SerializedBlock {
 	return safebox.SerializedBlock{
-		Header:     this.SerializeBlockHeader(block, true),
+		Header:     this.SerializeBlockHeader(block, true, false),
 		Operations: block.GetOperations(),
 	}
 }
 
-func (this *Blockchain) GetPendingBlock() safebox.BlockBase {
-	return this.getPendingBlock(nil, []byte(""))
+func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
+	var blockTimestamp uint32
+	if timestamp == nil {
+		blockTimestamp = uint32(time.Now().Unix())
+	} else {
+		blockTimestamp = *timestamp
+	}
+	return this.getPendingBlock(nil, []byte(""), blockTimestamp)
 }
 
 func (this *Blockchain) GetTxPool() []tx.Tx {
@@ -295,7 +307,7 @@ func (this *Blockchain) GetTxPool() []tx.Tx {
 	return operations
 }
 
-func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte) safebox.BlockBase {
+func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
 	var minerSerialized []byte
 	if miner == nil {
 		minerSerialized = utils.Serialize(crypto.NewKeyNil().Public)
@@ -318,7 +330,7 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte) sa
 			Major: 1,
 			Minor: 1,
 		},
-		Timestamp:       uint32(time.Now().Unix()),
+		Timestamp:       timestamp,
 		Target:          this.target.GetCompact(),
 		Nonce:           0,
 		Payload:         payload,

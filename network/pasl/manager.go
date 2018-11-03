@@ -99,7 +99,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		for {
 			select {
 			case event := <-manager.onNewBlock:
-				if err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, nil); err != nil {
+				if _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, nil); err != nil {
 					utils.Tracef("[P2P %p] AddBlockSerialized %d failed %v", event.source, event.SerializedBlock.Header.Index, err)
 					if event.shouldBroadcast {
 						manager.forEachConnection(func(conn *PascalConnection) {
@@ -178,7 +178,7 @@ func (this *manager) sync() bool {
 	blocks := conn.BlocksGet(nodeHeight, to)
 	for _, block := range blocks {
 		var parentNotFound bool
-		if err := this.blockchain.AddBlockSerialized(&block, &parentNotFound); err != nil {
+		if _, err := this.blockchain.AddBlockSerialized(&block, &parentNotFound); err != nil {
 			if parentNotFound {
 				utils.Tracef("[P2P %p] Possible chain split at block #%d %v", conn, block.Header.Index, err)
 			} else {

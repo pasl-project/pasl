@@ -64,7 +64,7 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 		return nil
 	}
 
-	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(), false), nil, defaults.UserAgent)
+	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(nil), false, false), nil, defaults.UserAgent)
 	return this.underlying.sendRequest(hello, payload, this.onHelloCommon)
 }
 
@@ -172,7 +172,7 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 		return nil, err
 	}
 
-	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(), false), nil, defaults.UserAgent)
+	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(nil), false, false), nil, defaults.UserAgent)
 	request.result.setError(success)
 	return out, nil
 }

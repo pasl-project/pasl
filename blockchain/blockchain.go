@@ -167,21 +167,20 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		block.GetIndex(),
 		utils.Serialize(meta),
 		func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
-			txRipemd160Hash := [20]byte{}
 			for _, tx := range block.GetOperations() {
-
 				serialized := bytes.NewBuffer([]byte(""))
 				err := tx.Serialize(serialized)
 				if err != nil {
 					utils.Panicf("Failed to serailize tx")
 				}
+				txRipemd160Hash := [20]byte{}
 				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
 				txes(txRipemd160Hash, serialized.Bytes())
 			}
 		},
 		func(accountOperations func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)) {
-			txRipemd160Hash := [20]byte{}
 			for account, tx := range affectedByTx {
+				txRipemd160Hash := [20]byte{}
 				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
 				accountOperations(account.Number, account.OperationsTotal, txRipemd160Hash)
 			}
@@ -235,8 +234,8 @@ func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.Tx) {
 		}
 		return true
 	})
-	for _, op := range toRemove {
-		this.txPool.Delete(op.GetTxIdString())
+	for index, _ := range toRemove {
+		this.txPool.Delete(toRemove[index].GetTxIdString())
 	}
 }
 
@@ -308,7 +307,8 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte) sa
 
 	operations := make([]tx.Tx, 0)
 	this.txPool.Range(func(key, value interface{}) bool {
-		operations = append(operations, value.(tx.Tx))
+		tx := value.(tx.Tx)
+		operations = append(operations, tx)
 		return true
 	})
 	block, err := safebox.NewBlock(&safebox.BlockMetadata{

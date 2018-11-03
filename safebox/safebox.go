@@ -116,19 +116,19 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 	}
 
 	affectedByTxes := make(map[*accounter.Account]*tx.Tx)
-	for _, it := range operations {
-		context, err := it.Validate(getMaturedAccountUnsafe)
+	for index, _ := range operations {
+		context, err := operations[index].Validate(getMaturedAccountUnsafe)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		accountsAffected, err := it.Apply(height, context)
+		accountsAffected, err := operations[index].Apply(height, context)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		for _, number := range accountsAffected {
 			this.accounter.MarkAccountDirty(number)
 			account := this.accounter.GetAccount(number)
-			affectedByTxes[account] = &it
+			affectedByTxes[account] = &operations[index]
 			updatedAccounts = append(updatedAccounts, account)
 		}
 	}

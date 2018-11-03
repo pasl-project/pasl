@@ -102,9 +102,9 @@ type blockHashBuffer struct {
 
 func GetOperationsHash(operations []tx.Tx) [32]byte {
 	hash := sha256.Sum256([]byte(""))
-	for _, it := range operations {
+	for index, _ := range operations {
 		h := sha256.New()
-		it.SerializeUnderlying(h)
+		operations[index].SerializeUnderlying(h)
 		hash = sha256.Sum256(h.Sum(hash[:]))
 	}
 	return hash
@@ -114,8 +114,8 @@ func NewBlock(meta *BlockMetadata) (BlockBase, error) {
 	var fee uint64 = 0
 	operations := make([]tx.Tx, len(meta.Operations))
 
-	for index, it := range meta.Operations {
-		operations[index] = it
+	for index, _ := range meta.Operations {
+		operations[index] = meta.Operations[index]
 		fee += operations[index].GetFee()
 	}
 

@@ -144,3 +144,16 @@ func (this *Api) FindOperation(ctx context.Context, params *struct{ Ophash strin
 	operation := txToNetwork(tx)
 	return &operation, nil
 }
+
+func (this *Api) GetAccountOperations(ctx context.Context, params *struct{ Account uint32 }) ([]network.Operation, error) {
+	txes := this.blockchain.GetAccountOperations(params.Account)
+	if txes == nil {
+		return nil, errors.New("Not found")
+	}
+
+	result := make([]network.Operation, 0)
+	for _, tx := range txes {
+		result = append(result, txToNetwork(tx))
+	}
+	return result, nil
+}

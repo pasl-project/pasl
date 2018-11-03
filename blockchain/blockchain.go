@@ -372,3 +372,21 @@ func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) *tx.Tx {
 
 	return &tx
 }
+
+func (this *Blockchain) GetAccountOperations(number uint32) (txesData map[uint32]*tx.Tx) {
+	serializedTxes, err := this.storage.GetAccountTxesData(number)
+	if err != nil {
+		return nil
+	}
+
+	result := make(map[uint32]*tx.Tx)
+	for operationId, serializedTx := range serializedTxes {
+		result[operationId] = &tx.Tx{}
+		if err := result[operationId].Deserialize(bytes.NewBuffer(serializedTx)); err != nil {
+			utils.Tracef("Failed to deserialize tx")
+			return nil
+		}
+	}
+
+	return result
+}

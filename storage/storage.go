@@ -301,8 +301,8 @@ func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	return
 }
 
-func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte, err error) {
-	txHashes = make(map[uint32][20]byte)
+func (this *Storage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+	txHashes := make(map[uint32]*[20]byte)
 	this.lock.RLock()
 	var current uint32
 	var operationId uint32
@@ -311,6 +311,14 @@ func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte
 		operationId = binary.BigEndian.Uint32(numberAndId[4:8])
 		if current == number {
 			txHashes[operationId] = txRipemd160Hash
+		}
+	}
+	txData = make(map[uint32][]byte)
+	for operationId, txRipemd160Hash := range txHashes {
+		if dataBuffer, ok := this.txesCache[*txRipemd160Hash]; ok {
+			txData[operationId] = make([]byte, len(dataBuffer))
+			copy(txData[operationId][:], dataBuffer)
+			delete(txHashes, operationId)
 		}
 	}
 	this.lock.RUnlock()
@@ -341,7 +349,25 @@ func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte
 			copy(txRipemd160Hash[:], v)
 			txHashes[operationId] = &txRipemd160Hash
 		}
+
+		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
+			return fmt.Errorf("Table doesn't exist %s", tableTx)
+		}
+
+		for operationId, txRipemd160Hash := range txHashes {
+			if dataBuffer := bucket.Get(txRipemd160Hash[:]); dataBuffer != nil {
+				txData[operationId] = make([]byte, len(dataBuffer))
+				copy(txData[operationId][:], dataBuffer)
+			} else {
+				return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
+			}
+		}
+
 		return nil
 	})
-	return
+
+	if err != nil {
+		utils.Panicf("Failed to fetch txes from DB %v", err)
+	}
+	return txData, err
 }

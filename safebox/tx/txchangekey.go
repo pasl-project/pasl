@@ -50,7 +50,7 @@ type changeKeyToSign struct {
 	Fee       uint64
 	Payload   utils.Serializable
 	Public    crypto.PublicSerializedPlain
-	NewPublic []byte
+	NewPublic utils.Serializable
 }
 
 func (this *ChangeKey) GetAccount() uint32 {
@@ -111,8 +111,10 @@ func (this *ChangeKey) getBufferToSign() []byte {
 		Payload: &utils.BytesWithoutLengthPrefix{
 			Bytes: this.Payload,
 		},
-		Public:    this.PublicKey.SerializedPlain(),
-		NewPublic: this.NewPublickey,
+		Public: this.PublicKey.SerializedPlain(),
+		NewPublic: &utils.BytesWithoutLengthPrefix{
+			Bytes: this.NewPublickey,
+		},
 	})
 }
 

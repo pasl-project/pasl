@@ -52,5 +52,7 @@ func TestWriteFlushRead(t *testing.T) {
 }
 
 func TestWriteRead(t *testing.T) {
-	WriteREadTest(t, true)
+	WriteREadTest(t, false)
+}
+
 }

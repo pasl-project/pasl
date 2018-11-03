@@ -64,7 +64,7 @@ func main() {
 		utils.Panicf("Failed to create data directory %v", err)
 	}
 	dbFileName := filepath.Join(dataDir, "storage.db")
-	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage *storage.Storage) error {
+	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage storage.Storage) error {
 		blockchain, err := blockchain.NewBlockchain(storage)
 		if err != nil {
 			return err

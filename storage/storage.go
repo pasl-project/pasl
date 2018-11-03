@@ -45,7 +45,16 @@ const (
 	tableAccountTx = "accountTx"
 )
 
-type Storage struct {
+type Storage interface {
+	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
+	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error
+	GetBlock(index uint32) (data []byte, err error)
+	Flush() error
+	GetTx(txRipemd160Hash [20]byte) (data []byte, err error)
+	GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error)
+}
+
+type StorageBoltDb struct {
 	db               *bolt.DB
 	accountsPerBlock uint32
 	lock             sync.RWMutex
@@ -55,7 +64,7 @@ type Storage struct {
 	accountTxesCache map[*[8]byte]*[20]byte
 }
 
-func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
+func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Storage) error) error {
 	_, err := os.Stat(*filename)
 	firstRun := os.IsNotExist(err)
 	db, err := bolt.Open(*filename, 0600, nil)
@@ -64,7 +73,7 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Sto
 	}
 	defer db.Close()
 
-	storage := &Storage{
+	storage := &StorageBoltDb{
 		db:               db,
 		accountsPerBlock: accountsPerBlock,
 		blocksCache:      make(map[uint32][]byte),
@@ -79,11 +88,11 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Sto
 		}
 	}
 
-	defer storage.flush()
+	defer storage.Flush()
 	return fn(storage)
 }
 
-func (this *Storage) createTables() error {
+func (this *StorageBoltDb) createTables() error {
 	return this.db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccount)); err != nil {
 			return err
@@ -101,7 +110,7 @@ func (this *Storage) createTables() error {
 	})
 }
 
-func (this *Storage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
+func (this *StorageBoltDb) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
@@ -134,7 +143,7 @@ func (this *Storage) Load(callback func(number uint32, serialized []byte) error)
 	return
 }
 
-func (this *Storage) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error {
+func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error {
 	flush := false
 
 	func() {
@@ -167,13 +176,13 @@ func (this *Storage) Store(index uint32, data []byte, txes func(func(txRipemd160
 	}()
 
 	if flush {
-		return this.flush()
+		return this.Flush()
 	}
 
 	return nil
 }
 
-func (this *Storage) flush() error {
+func (this *StorageBoltDb) Flush() error {
 	err := this.db.Update(func(tx *bolt.Tx) (err error) {
 		this.lock.Lock()
 		defer this.lock.Unlock()
@@ -245,7 +254,7 @@ func (this *Storage) flush() error {
 	return err
 }
 
-func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
+func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {
 	this.lock.RLock()
 	dataBuffer := this.blocksCache[index]
 	this.lock.RUnlock()
@@ -274,7 +283,7 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 	return
 }
 
-func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
+func (this *StorageBoltDb) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	this.lock.RLock()
 	dataBuffer := this.txesCache[txRipemd160Hash]
 	this.lock.RUnlock()
@@ -301,7 +310,7 @@ func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	return
 }
 
-func (this *Storage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
 	txHashes := make(map[uint32]*[20]byte)
 	this.lock.RLock()
 	var current uint32

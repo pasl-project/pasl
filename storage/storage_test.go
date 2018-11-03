@@ -30,7 +30,7 @@ func WriteReadTest(t *testing.T, flush bool) {
 	operationIndex2 := uint32(0x01293814)
 
 	defer os.Remove(dbFileName)
-	if WithStorage(&dbFileName, 5, func(storage *Storage) error {
+	if WithStorage(&dbFileName, 5, func(storage Storage) error {
 		storage.Store(0, serializedBlock,
 			func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
 				txes(txRipemd160Hash, serializedTx)
@@ -42,42 +42,42 @@ func WriteReadTest(t *testing.T, flush bool) {
 			},
 			func(fn func(number uint32, data []byte) error) error {
 				if err := fn(number, serializedAccount); err != nil {
-					t.FailNow()
+					t.Fatal()
 				}
 				if err := fn(number2, serializedAccount2); err != nil {
-					t.FailNow()
+					t.Fatal()
 				}
 				return nil
 			})
 
 		if flush {
-			storage.flush()
+			storage.Flush()
 		}
 
 		{
 			txesData, err := storage.GetAccountTxesData(number)
 			if err != nil {
-				t.FailNow()
+				t.Fatal()
 			}
 			if txData, ok := txesData[operationIndex]; !ok {
-				t.FailNow()
+				t.Fatal()
 			} else if bytes.Compare(txData[:], serializedTx[:]) != 0 {
-				t.FailNow()
+				t.Fatal()
 			}
 		}
 
 		{
 			if txData, err := storage.GetTx(txRipemd160Hash); txData == nil || err != nil {
-				t.FailNow()
+				t.Fatal()
 			}
 			if txData, err := storage.GetTx(txRipemd160Hash3); txData != nil || err == nil {
-				t.FailNow()
+				t.Fatal()
 			}
 		}
 
 		return nil
 	}) != nil {
-		t.FailNow()
+		t.Fatal()
 	}
 }
 
@@ -91,9 +91,9 @@ func TestWriteRead(t *testing.T) {
 
 func TestFailOpen(t *testing.T) {
 	dbFileName := ":"
-	if err := WithStorage(&dbFileName, 5, func(storage *Storage) error {
+	if err := WithStorage(&dbFileName, 5, func(storage Storage) error {
 		return nil
 	}); err == nil {
-		t.FailNow()
+		t.Fatal()
 	}
 }

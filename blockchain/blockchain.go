@@ -40,13 +40,13 @@ import (
 
 type Blockchain struct {
 	txPool  sync.Map
-	storage *storage.Storage
+	storage storage.Storage
 	safebox *safebox.Safebox
 	lock    sync.RWMutex
 	target  common.TargetBase
 }
 
-func NewBlockchain(storage *storage.Storage) (*Blockchain, error) {
+func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
 	accounter := accounter.NewAccounter()
 	var topBlock *safebox.BlockMetadata
 	var err error
@@ -75,7 +75,7 @@ func NewBlockchain(storage *storage.Storage) (*Blockchain, error) {
 	}, nil
 }
 
-func load(storage *storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
+func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
 	var index uint32 = 0
 	var i uint32 = 0
 	accounts := make([]*accounter.Account, defaults.AccountsPerBlock)

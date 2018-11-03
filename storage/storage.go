@@ -52,7 +52,7 @@ type Storage struct {
 	blocksCache      map[uint32][]byte
 	accountsCache    map[uint32][]byte
 	txesCache        map[[20]byte][]byte
-	accountTxesCache map[[8]byte][20]byte
+	accountTxesCache map[*[8]byte]*[20]byte
 }
 
 func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
@@ -70,7 +70,7 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Sto
 		blocksCache:      make(map[uint32][]byte),
 		accountsCache:    make(map[uint32][]byte),
 		txesCache:        make(map[[20]byte][]byte),
-		accountTxesCache: make(map[[8]byte][20]byte),
+		accountTxesCache: make(map[*[8]byte]*[20]byte),
 	}
 
 	if firstRun {
@@ -152,7 +152,7 @@ func (this *Storage) Store(index uint32, data []byte, txes func(func(txRipemd160
 			numberAndId := [8]byte{}
 			binary.BigEndian.PutUint32(numberAndId[0:4], number)
 			binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
-			this.accountTxesCache[numberAndId] = txRipemd160Hash
+			this.accountTxesCache[&numberAndId] = &txRipemd160Hash
 		})
 		affectedAccounts(func(number uint32, data []byte) (err error) {
 			this.accountsCache[number] = make([]byte, len(data))
@@ -185,6 +185,7 @@ func (this *Storage) flush() error {
 			}
 
 			for index, data := range this.blocksCache {
+				buffer := [4]byte{}
 				binary.BigEndian.PutUint32(buffer[:], index)
 				if err = bucket.Put(buffer[:], data); err != nil {
 					return err
@@ -196,6 +197,7 @@ func (this *Storage) flush() error {
 			}
 
 			for number, data := range this.accountsCache {
+				buffer := [4]byte{}
 				binary.BigEndian.PutUint32(buffer[:], number)
 				if err = bucket.Put(buffer[:], data); err != nil {
 					return err
@@ -207,7 +209,8 @@ func (this *Storage) flush() error {
 			}
 
 			for txRipemd160Hash, data := range this.txesCache {
-				if err = bucket.Put(txRipemd160Hash[:], data); err != nil {
+				txRipemd160HashCopy := txRipemd160Hash
+				if err = bucket.Put(txRipemd160HashCopy[:], data); err != nil {
 					return err
 				}
 			}
@@ -238,9 +241,11 @@ func (this *Storage) flush() error {
 
 func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 	this.lock.RLock()
-	data = this.blocksCache[index]
+	dataBuffer := this.blocksCache[index]
 	this.lock.RUnlock()
-	if data != nil {
+	if dataBuffer != nil {
+		data = make([]byte, len(dataBuffer))
+		copy(data, dataBuffer)
 		return data, nil
 	}
 
@@ -252,7 +257,10 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 		}
 		var indexBuf [4]byte
 		binary.BigEndian.PutUint32(indexBuf[:], index)
-		if data = bucket.Get(indexBuf[:]); data == nil {
+		if dataBuffer := bucket.Get(indexBuf[:]); dataBuffer != nil {
+			data = make([]byte, len(dataBuffer))
+			copy(data, dataBuffer)
+		} else {
 			return fmt.Errorf("Failed to get block #%d", index)
 		}
 		return nil
@@ -262,9 +270,11 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 
 func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	this.lock.RLock()
-	data = this.txesCache[txRipemd160Hash]
+	dataBuffer := this.txesCache[txRipemd160Hash]
 	this.lock.RUnlock()
 	if data != nil {
+		data = make([]byte, len(dataBuffer))
+		copy(data, dataBuffer)
 		return data, nil
 	}
 
@@ -274,7 +284,10 @@ func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
 			return fmt.Errorf("Table doesn't exist %s", tableTx)
 		}
-		if data = bucket.Get(txRipemd160Hash[:]); data == nil {
+		if dataBuffer := bucket.Get(txRipemd160Hash[:]); dataBuffer != nil {
+			data = make([]byte, len(dataBuffer))
+			copy(data, dataBuffer)
+		} else {
 			return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
 		}
 		return nil
@@ -307,7 +320,6 @@ func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte
 		binary.BigEndian.PutUint32(buf[:], number)
 
 		c := bucket.Cursor()
-		var txRipemd160Hash [20]byte
 		for k, v := c.Seek(buf[:]); k != nil; k, v = c.Next() {
 			numberAndId := bytes.NewBuffer(k)
 			if err := binary.Read(numberAndId, binary.BigEndian, &current); err != nil {
@@ -319,8 +331,9 @@ func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte
 			if current != number {
 				break
 			}
+			txRipemd160Hash := [20]byte{}
 			copy(txRipemd160Hash[:], v)
-			txHashes[operationId] = txRipemd160Hash
+			txHashes[operationId] = &txRipemd160Hash
 		}
 		return nil
 	})

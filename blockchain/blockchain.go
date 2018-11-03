@@ -363,7 +363,12 @@ func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) *tx.Tx {
 	if err != nil {
 		return nil
 	}
+
 	var tx tx.Tx
-	tx.Deserialize(bytes.NewBuffer(serialized))
+	if err := tx.Deserialize(bytes.NewBuffer(serialized)); err != nil {
+		utils.Tracef("Failed to deserialize tx")
+		return nil
+	}
+
 	return &tx
 }

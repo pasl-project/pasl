@@ -174,7 +174,7 @@ func (this *Storage) Store(index uint32, data []byte, txes func(func(txRipemd160
 }
 
 func (this *Storage) flush() error {
-	return this.db.Update(func(tx *bolt.Tx) (err error) {
+	err := this.db.Update(func(tx *bolt.Tx) (err error) {
 		this.lock.Lock()
 		defer this.lock.Unlock()
 
@@ -232,11 +232,17 @@ func (this *Storage) flush() error {
 			return err
 		}
 
-		this.blocksCache = make(map[uint32][]byte)
-		this.accountsCache = make(map[uint32][]byte)
-
 		return nil
 	})
+
+	if err == nil {
+		this.blocksCache = make(map[uint32][]byte)
+		this.accountsCache = make(map[uint32][]byte)
+		this.txesCache = make(map[[20]byte][]byte)
+		this.accountTxesCache = make(map[*[8]byte]*[20]byte)
+	}
+
+	return err
 }
 
 func (this *Storage) GetBlock(index uint32) (data []byte, err error) {

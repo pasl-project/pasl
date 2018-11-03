@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/boltdb/bolt"
@@ -55,6 +56,8 @@ type Storage struct {
 }
 
 func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Storage) error) error {
+	_, err := os.Stat(*filename)
+	firstRun := os.IsNotExist(err)
 	db, err := bolt.Open(*filename, 0600, nil)
 	if err != nil {
 		return err
@@ -70,8 +73,32 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage *Sto
 		accountTxesCache: make(map[[8]byte][20]byte),
 	}
 
+	if firstRun {
+		if err = storage.createTables(); err != nil {
+			return fmt.Errorf("Failed to initializ db %v", err)
+		}
+	}
+
 	defer storage.flush()
 	return fn(storage)
+}
+
+func (this *Storage) createTables() error {
+	return this.db.Update(func(tx *bolt.Tx) error {
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccount)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccountTx)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableBlock)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableTx)); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (this *Storage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
@@ -79,12 +106,12 @@ func (this *Storage) Load(callback func(number uint32, serialized []byte) error)
 		var bucket *bolt.Bucket
 
 		if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
-			return nil
+			return fmt.Errorf("Table doesn't exist %s", tableBlock)
 		}
 		height = uint32(bucket.Stats().KeyN)
 
 		if bucket = tx.Bucket([]byte(tableAccount)); bucket == nil {
-			return nil
+			return fmt.Errorf("Table doesn't exist %s", tableAccount)
 		}
 		cursor := bucket.Cursor()
 
@@ -153,11 +180,10 @@ func (this *Storage) flush() error {
 
 		err = (func() error {
 			var bucket *bolt.Bucket
-			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableBlock)); err != nil {
-				return err
+			if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
+				return fmt.Errorf("Table doesn't exist %s", tableBlock)
 			}
 
-			var buffer [4]byte
 			for index, data := range this.blocksCache {
 				binary.BigEndian.PutUint32(buffer[:], index)
 				if err = bucket.Put(buffer[:], data); err != nil {
@@ -165,8 +191,8 @@ func (this *Storage) flush() error {
 				}
 			}
 
-			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableAccount)); err != nil {
-				return err
+			if bucket = tx.Bucket([]byte(tableAccount)); bucket == nil {
+				return fmt.Errorf("Table doesn't exist %s", tableAccount)
 			}
 
 			for number, data := range this.accountsCache {
@@ -176,8 +202,8 @@ func (this *Storage) flush() error {
 				}
 			}
 
-			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableTx)); err != nil {
-				return err
+			if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
+				return fmt.Errorf("Table doesn't exist %s", tableTx)
 			}
 
 			for txRipemd160Hash, data := range this.txesCache {
@@ -186,8 +212,8 @@ func (this *Storage) flush() error {
 				}
 			}
 
-			if bucket, err = tx.CreateBucketIfNotExists([]byte(tableAccountTx)); err != nil {
-				return err
+			if bucket = tx.Bucket([]byte(tableAccountTx)); bucket == nil {
+				return fmt.Errorf("Table doesn't exist %s", tableAccountTx)
 			}
 
 			for accountAndId, txRipemd160Hash := range this.accountTxesCache {
@@ -222,7 +248,7 @@ func (this *Storage) GetBlock(index uint32) (data []byte, err error) {
 		var bucket *bolt.Bucket
 
 		if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
-			return nil
+			return fmt.Errorf("Table doesn't exist %s", tableBlock)
 		}
 		var indexBuf [4]byte
 		binary.BigEndian.PutUint32(indexBuf[:], index)
@@ -246,7 +272,7 @@ func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 		var bucket *bolt.Bucket
 
 		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
-			return nil
+			return fmt.Errorf("Table doesn't exist %s", tableTx)
 		}
 		if data = bucket.Get(txRipemd160Hash[:]); data == nil {
 			return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
@@ -274,7 +300,7 @@ func (this *Storage) GetAccountTxes(number uint32) (txHashes map[uint32][20]byte
 		var bucket *bolt.Bucket
 
 		if bucket = tx.Bucket([]byte(tableAccountTx)); bucket == nil {
-			return nil
+			return fmt.Errorf("Table doesn't exist %s", tableAccountTx)
 		}
 
 		var buf [4]byte

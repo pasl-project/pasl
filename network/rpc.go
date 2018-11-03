@@ -63,6 +63,7 @@ func WithRpcServer(hostPort string, api Api, callback func() error) error {
 			"executeoperations":    jrpc2.NewHandler(api.ExecuteOperations),
 			"findoperation":        jrpc2.NewHandler(api.FindOperation),
 			"getaccountoperations": jrpc2.NewHandler(api.GetAccountOperations),
+			"getblockoperations":   jrpc2.NewHandler(api.GetBlockOperations),
 		}
 
 		headers := http.Header{}

@@ -157,3 +157,16 @@ func (this *Api) GetAccountOperations(ctx context.Context, params *struct{ Accou
 	}
 	return result, nil
 }
+
+func (this *Api) GetBlockOperations(ctx context.Context, params *struct{ Block uint32 }) ([]network.Operation, error) {
+	txes := this.blockchain.GetBlockOperations(params.Block)
+	if txes == nil {
+		return nil, errors.New("Not found")
+	}
+
+	result := make([]network.Operation, 0)
+	for index, _ := range txes {
+		result = append(result, txToNetwork(&txes[index]))
+	}
+	return result, nil
+}

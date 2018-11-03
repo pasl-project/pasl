@@ -390,3 +390,13 @@ func (this *Blockchain) GetAccountOperations(number uint32) (txesData map[uint32
 
 	return result
 }
+
+func (this *Blockchain) GetBlockOperations(index uint32) (txesData []tx.Tx) {
+	block := this.GetBlock(index)
+	if block == nil {
+		utils.Tracef("Failed to get block %d", index)
+		return nil
+	}
+
+	return block.GetOperations()
+}

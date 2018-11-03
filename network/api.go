@@ -54,4 +54,5 @@ type Api interface {
 	ExecuteOperations(ctx context.Context, params *struct{ RawOperations string }) (bool, error)
 	FindOperation(ctx context.Context, params *struct{ Ophash string }) (*Operation, error)
 	GetAccountOperations(ctx context.Context, params *struct{ Account uint32 }) ([]Operation, error)
+	GetBlockOperations(ctx context.Context, params *struct{ Block uint32 }) ([]Operation, error)
 }

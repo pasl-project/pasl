@@ -278,7 +278,7 @@ func (this *Storage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	this.lock.RLock()
 	dataBuffer := this.txesCache[txRipemd160Hash]
 	this.lock.RUnlock()
-	if data != nil {
+	if dataBuffer != nil {
 		data = make([]byte, len(dataBuffer))
 		copy(data, dataBuffer)
 		return data, nil

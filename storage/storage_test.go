@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func WriteREadTest(t *testing.T, flush bool) {
+func WriteReadTest(t *testing.T, flush bool) {
 	dbFileName := "test.db"
 
 	var txRipemd160Hash [20]byte
@@ -82,11 +82,11 @@ func WriteREadTest(t *testing.T, flush bool) {
 }
 
 func TestWriteFlushRead(t *testing.T) {
-	WriteREadTest(t, true)
+	WriteReadTest(t, true)
 }
 
 func TestWriteRead(t *testing.T) {
-	WriteREadTest(t, false)
+	WriteReadTest(t, false)
 }
 
 func TestFailOpen(t *testing.T) {

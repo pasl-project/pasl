@@ -39,6 +39,7 @@ type pascalConnectionState struct {
 }
 
 type PascalConnection struct {
+	logPrefix      string
 	underlying     *protocol
 	blockchain     *blockchain.Blockchain
 	nonce          []byte
@@ -141,10 +142,10 @@ func (this *PascalConnection) BroadcastBlock(block *safebox.SerializedBlock) {
 }
 
 func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []byte) error {
-	utils.Tracef("[P2P %p]", this)
+	utils.Tracef("[P2P %s]", this.logPrefix)
 
 	if request == nil {
-		return fmt.Errorf("[P2P %p] Refused by remote side", this)
+		return fmt.Errorf("[P2P %s] Refused by remote side", this.logPrefix)
 	}
 
 	var packet packetHello
@@ -154,10 +155,10 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 	}
 
 	if bytes.Equal(packet.Nonce, this.nonce) {
-		return fmt.Errorf("[P2P %p] Loopback connection", this)
+		return fmt.Errorf("[P2P %s] Loopback connection", this.logPrefix)
 	}
 
-	utils.Tracef("[P2P %p] Height %d SafeboxHash %s", this, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
+	utils.Tracef("[P2P %s] Height %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
 	this.SetState(packet.Block.Index, packet.Block.PrevSafeboxHash)
 
 	for _, peer := range packet.Peers {
@@ -178,7 +179,7 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 }
 
 func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %p]", this)
+	utils.Tracef("[P2P %s]", this.logPrefix)
 
 	var packet packetGetBlocksRequest
 	if err := utils.Deserialize(&packet, bytes.NewBuffer(payload)); err != nil {
@@ -200,7 +201,7 @@ func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, paylo
 		if block := this.blockchain.GetBlock(index); block != nil {
 			serialized = append(serialized, this.blockchain.SerializeBlock(block))
 		} else {
-			utils.Tracef("[P2P %p] Failed to get block %d", this, index)
+			utils.Tracef("[P2P %s] Failed to get block %d", this.logPrefix, index)
 			break
 		}
 	}
@@ -219,18 +220,18 @@ func (this *PascalConnection) onErrorReport(request *requestResponse, payload []
 		return nil, err
 	}
 
-	utils.Tracef("[P2P %p] Peer reported error '%s'", this, packet.Message)
+	utils.Tracef("[P2P %s] Peer reported error '%s'", this.logPrefix, packet.Message)
 
 	return nil, nil
 }
 
 func (this *PascalConnection) onMessageRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %p]", this)
+	utils.Tracef("[P2P %s]", this.logPrefix)
 	return nil, nil
 }
 
 func (this *PascalConnection) onGetHeadersRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %p]", this)
+	utils.Tracef("[P2P %s]", this.logPrefix)
 	return nil, nil
 }
 
@@ -240,7 +241,7 @@ func (this *PascalConnection) onNewBlockNotification(request *requestResponse, p
 		return nil, err
 	}
 
-	utils.Tracef("[P2P %p] New block %d", this, packet.Header.Index)
+	utils.Tracef("[P2P %s] New block %d", this.logPrefix, packet.Header.Index)
 	this.onNewBlock <- &eventNewBlock{
 		event:           event{this},
 		SerializedBlock: packet.SerializedBlock,
@@ -256,7 +257,7 @@ func (this *PascalConnection) onNewOperationsNotification(request *requestRespon
 		return nil, err
 	}
 
-	utils.Tracef("[P2P %p] New operations %d", this, len(packet.Operations))
+	utils.Tracef("[P2P %s] New operations %d", this.logPrefix, len(packet.Operations))
 	for _, op := range packet.Operations {
 		this.onNewOperation <- &eventNewOperation{event{this}, op}
 	}

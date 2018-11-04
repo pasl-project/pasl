@@ -100,7 +100,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			select {
 			case event := <-manager.onNewBlock:
 				if _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, nil); err != nil {
-					utils.Tracef("[P2P %p] AddBlockSerialized %d failed %v", event.source, event.SerializedBlock.Header.Index, err)
+					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
 					if event.shouldBroadcast {
 						manager.forEachConnection(func(conn *PascalConnection) {
 							conn.BroadcastBlock(&event.SerializedBlock)
@@ -110,7 +110,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			case event := <-manager.onNewOperation:
 				new, err := manager.blockchain.AddOperation(&event.Tx)
 				if err != nil {
-					utils.Tracef("[P2P %p] Tx validation failed: %v", event.source, err)
+					utils.Tracef("[P2P %s] Tx validation failed: %v", event.source.logPrefix, err)
 				} else if new {
 					manager.forEachConnection(func(conn *PascalConnection) {
 						conn.BroadcastTx(&event.Tx)
@@ -172,7 +172,7 @@ func (this *manager) sync() bool {
 	conn := candidates[selected]
 	height, _ := conn.GetState()
 	ahead := height - nodeHeight
-	utils.Tracef("[P2P %p] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn, nodeHeight, height, ahead, ahead/288)
+	utils.Tracef("[P2P %s] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, height, ahead, ahead/288)
 
 	to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
 	blocks := conn.BlocksGet(nodeHeight, to)
@@ -180,9 +180,9 @@ func (this *manager) sync() bool {
 		var parentNotFound bool
 		if _, err := this.blockchain.AddBlockSerialized(&block, &parentNotFound); err != nil {
 			if parentNotFound {
-				utils.Tracef("[P2P %p] Possible chain split at block #%d %v", conn, block.Header.Index, err)
+				utils.Tracef("[P2P %s] Possible chain split at block #%d %v", conn.logPrefix, block.Header.Index, err)
 			} else {
-				utils.Tracef("[P2P %p] Block #%d verification failed %v", conn, block.Header.Index, err)
+				utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
 			}
 		}
 	}
@@ -202,6 +202,7 @@ func (this *manager) forEachConnection(fn func(*PascalConnection), except *Pasca
 func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool) (interface{}, error) {
 	conn := &PascalConnection{
 		underlying:     NewProtocol(transport, this.timeoutRequest),
+		logPrefix:      address,
 		blockchain:     this.blockchain,
 		nonce:          this.nonce,
 		peerUpdates:    this.peerUpdates,

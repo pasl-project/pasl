@@ -23,6 +23,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -145,6 +146,10 @@ func (node *nodeInternal) GetPeersByNetwork(network string) map[string]*Peer {
 }
 
 func (node *nodeInternal) AddPeer(network, address string) bool {
+	host := strings.Split(address, ":")[0]
+	if ip := net.ParseIP(host); ip != nil && !ip.IsGlobalUnicast() {
+		return false
+	}
 	return node.Peers.Add(address)
 }
 

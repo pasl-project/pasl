@@ -66,6 +66,7 @@ func (this *Accounter) getHashUnsafe() []byte {
 	if !this.dirty {
 		return this.hash[:]
 	}
+	this.dirty = false
 
 	hash := sha256.New()
 	for _, it := range this.packs {

@@ -73,6 +73,11 @@ func (this *Tx) GetFee() uint64 {
 	return this.commonOperation.GetFee()
 }
 
+func (this *Tx) ValidateSignature() error {
+	_, _, publicKey := this.commonOperation.getSourceInfo()
+	return checkSignature(publicKey, this.commonOperation.getBufferToSign(), this.commonOperation.getSignature())
+}
+
 func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
 	number, _, publicKey := this.commonOperation.getSourceInfo()
 
@@ -82,10 +87,6 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 	}
 	if !source.PublicKey.Equal(publicKey) {
 		return nil, errors.New("Source account invalid public key")
-	}
-
-	if err := checkSignature(publicKey, this.commonOperation.getBufferToSign(), this.commonOperation.getSignature()); err != nil {
-		return nil, err
 	}
 
 	return this.commonOperation.Validate(getAccount)

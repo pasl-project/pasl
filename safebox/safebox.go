@@ -20,7 +20,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package safebox
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/pasl-project/pasl/accounter"
 	"github.com/pasl-project/pasl/crypto"
@@ -88,6 +90,25 @@ func (this *Safebox) Validate(operation *tx.Tx) error {
 	return err
 }
 
+func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
+	wg := &sync.WaitGroup{}
+	invalid := uint32(0)
+	wg.Add(len(*operations))
+	for index, _ := range *operations {
+		go func(index int) {
+			defer wg.Done()
+			if (*operations)[index].ValidateSignature() != nil {
+				atomic.StoreUint32(&invalid, 1)
+			}
+		}(index)
+	}
+	wg.Wait()
+	if invalid != 0 {
+		return errors.New("At least one of the txes didn't pass signature check")
+	}
+	return nil
+}
+
 func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.Account, map[*accounter.Account]*tx.Tx, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
@@ -113,6 +134,10 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 			return this.accounter.GetAccount(number)
 		}
 		return nil
+	}
+
+	if err := this.validateSignatures(&operations); err != nil {
+		return nil, nil, nil, err
 	}
 
 	affectedByTxes := make(map[*accounter.Account]*tx.Tx)

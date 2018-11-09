@@ -41,7 +41,7 @@ const (
 	TimeoutRequest          time.Duration = time.Duration(60) * time.Second
 	MaxIncoming             uint32        = 100
 	MaxOutgoing             uint32        = 10
-	NetworkBlocksPerRequest uint32        = 100
+	NetworkBlocksPerRequest uint32        = 500
 	ReconnectionDelayMax    uint32        = 30
 )
 

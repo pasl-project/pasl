@@ -28,6 +28,9 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
+var bigOne = big.NewInt(1)
+var difficultyOne *big.Int = big.NewInt(0).Lsh(bigOne, 256)
+
 type target struct {
 	compact uint32
 	value   *big.Int
@@ -36,6 +39,7 @@ type target struct {
 type TargetBase interface {
 	GetCompact() uint32
 	Get() *big.Int
+	GetDifficulty() *big.Int
 	Check(pow []byte) bool
 	Equal(other TargetBase) bool
 	Set(uint32)
@@ -56,6 +60,10 @@ func (this *target) GetCompact() uint32 {
 
 func (this *target) Get() *big.Int {
 	return this.value
+}
+
+func (this *target) GetDifficulty() *big.Int {
+	return big.NewInt(0).Div(difficultyOne, this.Get())
 }
 
 func (this *target) Check(pow []byte) bool {

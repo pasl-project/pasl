@@ -6,7 +6,7 @@ import (
 
 type Block struct {
 	Block       uint32 `json:"block"`
-	Enc_pubkey  string `json:"enc_pubkey"`
+	EncPubkey   string `json:"enc_pubkey"`
 	Fee         uint64 `json:"fee"`
 	Hashratekhs uint64 `json:"hashratekhs"`
 	Maturation  uint32 `json:"maturation"`
@@ -20,15 +20,15 @@ type Block struct {
 	Target      uint32 `json:"target"`
 	Timestamp   uint32 `json:"timestamp"`
 	Ver         uint16 `json:"ver"`
-	Ver_a       uint16 `json:"ver_a"`
+	VerA        uint16 `json:"ver_a"`
 }
 
 type Account struct {
-	Account     uint32 `json:"account"`
-	Balance     uint64 `json:"balance"`
-	Enc_pubkey  string `json:"enc_pubkey"`
-	N_operation uint32 `json:"n_operation"`
-	Updated_b   uint32 `json:"updated_b"`
+	Account    uint32 `json:"account"`
+	Balance    uint64 `json:"balance"`
+	EncPubkey  string `json:"enc_pubkey"`
+	NOperation uint32 `json:"n_operation"`
+	UpdatedB   uint32 `json:"updated_b"`
 }
 
 type Operation struct {
@@ -46,7 +46,7 @@ type Operation struct {
 	Time           uint32 `json:"time"`
 }
 
-type Api interface {
+type API interface {
 	GetBlockCount(ctx context.Context) (int, error)
 	GetBlock(ctx context.Context, params *struct{ Block uint32 }) (*Block, error)
 	GetAccount(ctx context.Context, params *struct{ Account uint32 }) (*Account, error)

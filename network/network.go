@@ -98,7 +98,7 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 			go func(conn net.Conn) {
 				defer wg.Done()
 
-				node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), false, ctx)
+				node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), false)
 			}(conn)
 		}
 	})
@@ -120,19 +120,19 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 
 			for _, peer := range node.Peers.ScheduleReconnect((int)(node.Config.MaxOutgoing)) {
 				wg.Add(1)
-				go func(address string) {
+				go func(peer *Peer) {
 					defer wg.Done()
 					defer node.Peers.SetDisconnected(peer)
 
 					d := net.Dialer{Timeout: node.Config.TimeoutConnect}
-					conn, err := d.DialContext(ctx, "tcp", address)
+					conn, err := d.DialContext(ctx, "tcp", peer.Address)
 					if err != nil {
 						utils.Tracef("Connection failed: %v", err)
 						return
 					}
 
-					node.HandleConnection(conn, "tcp://"+conn.RemoteAddr().String(), true, ctx)
-				}(peer.Address)
+					node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), true)
+				}(peer)
 			}
 		}
 	})
@@ -153,7 +153,7 @@ func (node *nodeInternal) AddPeer(network, address string) bool {
 	return node.Peers.Add(address)
 }
 
-func (node *nodeInternal) HandleConnection(conn net.Conn, address string, isOutgoing bool, ctx context.Context) {
+func (node *nodeInternal) HandleConnection(ctx context.Context, conn net.Conn, address string, isOutgoing bool) {
 	link, err := node.Manager.OnOpen(address, conn, isOutgoing)
 	if err != nil {
 		utils.Tracef("OnOpen failed: %v", err)

@@ -47,7 +47,7 @@ func (this *httpFrame) Close() error {
 	return this.w.Close()
 }
 
-func WithRpcServer(hostPort string, api Api, callback func() error) error {
+func WithRpcServer(hostPort string, api API, callback func() error) error {
 	listener, err := net.Listen("tcp", hostPort)
 	if err != nil {
 		return err

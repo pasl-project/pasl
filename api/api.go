@@ -17,7 +17,7 @@ import (
 )
 
 type Api struct {
-	network.Api
+	network.API
 
 	blockchain *blockchain.Blockchain
 }
@@ -46,7 +46,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 	height, _ := this.blockchain.GetState()
 	return &network.Block{
 		Block:       blockMeta.GetIndex(),
-		Enc_pubkey:  hex.EncodeToString(utils.Serialize(blockMeta.GetMiner().Serialized())),
+		EncPubkey:   hex.EncodeToString(utils.Serialize(blockMeta.GetMiner().Serialized())),
 		Fee:         fee,
 		Hashratekhs: 0, // TODO: calculate
 		Maturation:  utils.MaxUint32(height, blockMeta.GetIndex()+1) - blockMeta.GetIndex() - 1,
@@ -60,7 +60,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 		Target:      blockMeta.GetTarget().GetCompact(),
 		Timestamp:   blockMeta.GetTimestamp(),
 		Ver:         blockMeta.GetVersion().Major,
-		Ver_a:       blockMeta.GetVersion().Minor,
+		VerA:        blockMeta.GetVersion().Minor,
 	}, nil
 }
 
@@ -70,11 +70,11 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 		return nil, errors.New("Not found")
 	}
 	return &network.Account{
-		Account:     account.Number,
-		Balance:     account.Balance,
-		Enc_pubkey:  hex.EncodeToString(utils.Serialize(account.PublicKey.Serialized())),
-		N_operation: account.Operations,
-		Updated_b:   account.UpdatedIndex,
+		Account:    account.Number,
+		Balance:    account.Balance,
+		EncPubkey:  hex.EncodeToString(utils.Serialize(account.PublicKey.Serialized())),
+		NOperation: account.Operations,
+		UpdatedB:   account.UpdatedIndex,
 	}, nil
 }
 

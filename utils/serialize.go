@@ -204,6 +204,13 @@ func Serialize(struc interface{}) []byte {
 			default:
 				binary.Write(serialized, binary.LittleEndian, uint32(value.Len()))
 			}
+		case reflect.Array:
+			switch value.Type().Elem().Kind() {
+			case reflect.Uint8:
+				binary.Write(serialized, binary.LittleEndian, value.Interface())
+			default:
+				Panicf("Unimplemented %v %v", kind, value.Type().Elem().Kind())
+			}
 		default:
 			Panicf("Unimplemented %v", kind)
 		}
@@ -265,6 +272,13 @@ func Deserialize(struc interface{}, r io.Reader) error {
 				var len uint32
 				binary.Read(r, binary.LittleEndian, &len)
 				value.Set(reflect.MakeSlice(value.Type(), int(len), int(len)))
+			}
+		case reflect.Array:
+			switch kind := value.Type().Elem().Kind(); kind {
+			case reflect.Uint8:
+				binary.Read(r, binary.LittleEndian, value.Addr().Interface())
+			default:
+				Panicf("Unimplemented array %v", kind)
 			}
 		default:
 			Panicf("Unimplemented %v", kind)

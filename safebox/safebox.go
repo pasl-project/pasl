@@ -109,7 +109,7 @@ func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
 	return nil
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.Account, map[*accounter.Account]*tx.Tx, error) {
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.PackBase, map[*accounter.Account]*tx.Tx, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -118,14 +118,15 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		fork:      this.fork,
 	}
 
-	updatedAccounts := make([]*accounter.Account, 0)
+	updatedPacks := make([]*accounter.PackBase, 0)
 
-	newAccounts, newIndex := newSafebox.accounter.NewPack(miner, timestamp)
-	newAccounts[0].Balance = getReward(newIndex)
+	newPack, newIndex := newSafebox.accounter.NewPack(miner, timestamp, difficulty)
+	firstAccount := newPack.GetAccount(0)
+	firstAccount.Balance = getReward(newIndex)
 	for _, it := range operations {
-		newAccounts[0].Balance += it.GetFee()
+		firstAccount.Balance += it.GetFee()
 	}
-	updatedAccounts = append(updatedAccounts, newAccounts...)
+	updatedPacks = append(updatedPacks, newPack)
 
 	height, _ := this.getStateUnsafe()
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
@@ -151,14 +152,14 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 			return nil, nil, nil, err
 		}
 		for _, number := range accountsAffected {
-			this.accounter.MarkAccountDirty(number)
+			pack := this.accounter.MarkAccountDirty(number)
 			account := this.accounter.GetAccount(number)
 			affectedByTxes[account] = &operations[index]
-			updatedAccounts = append(updatedAccounts, account)
+			updatedPacks = append(updatedPacks, pack)
 		}
 	}
 
-	return newSafebox, updatedAccounts, affectedByTxes, nil
+	return newSafebox, updatedPacks, affectedByTxes, nil
 }
 
 func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {

@@ -32,14 +32,11 @@ import (
 )
 
 const (
-	blocksCacheLimit      = 50
-	accountsCacheLimit    = 1000
-	txesCacheLimit        = 100
-	accountTxesCacheLimit = 100
+	blocksCacheLimit = 509
 )
 
 const (
-	tableAccount   = "account"
+	tablePack      = "pack"
 	tableBlock     = "block"
 	tableTx        = "tx"
 	tableAccountTx = "accountTx"
@@ -47,7 +44,7 @@ const (
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
-	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error
+	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte) error) error) error
 	GetBlock(index uint32) (data []byte, err error)
 	Flush() error
 	GetTx(txRipemd160Hash [20]byte) (data []byte, err error)
@@ -59,7 +56,7 @@ type StorageBoltDb struct {
 	accountsPerBlock uint32
 	lock             sync.RWMutex
 	blocksCache      map[uint32][]byte
-	accountsCache    map[uint32][]byte
+	packsCache       map[uint32][]byte
 	txesCache        map[[20]byte][]byte
 	accountTxesCache map[*[8]byte]*[20]byte
 }
@@ -77,7 +74,7 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Stor
 		db:               db,
 		accountsPerBlock: accountsPerBlock,
 		blocksCache:      make(map[uint32][]byte),
-		accountsCache:    make(map[uint32][]byte),
+		packsCache:       make(map[uint32][]byte),
 		txesCache:        make(map[[20]byte][]byte),
 		accountTxesCache: make(map[*[8]byte]*[20]byte),
 	}
@@ -94,7 +91,7 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Stor
 
 func (this *StorageBoltDb) createTables() error {
 	return this.db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccount)); err != nil {
+		if _, err := tx.CreateBucketIfNotExists([]byte(tablePack)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccountTx)); err != nil {
@@ -110,7 +107,7 @@ func (this *StorageBoltDb) createTables() error {
 	})
 }
 
-func (this *StorageBoltDb) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
+func (this *StorageBoltDb) Load(callback func(index uint32, serialized []byte) error) (height uint32, err error) {
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
@@ -119,23 +116,22 @@ func (this *StorageBoltDb) Load(callback func(number uint32, serialized []byte) 
 		}
 		height = uint32(bucket.Stats().KeyN)
 
-		if bucket = tx.Bucket([]byte(tableAccount)); bucket == nil {
-			return fmt.Errorf("Table doesn't exist %s", tableAccount)
+		if bucket = tx.Bucket([]byte(tablePack)); bucket == nil {
+			return fmt.Errorf("Table doesn't exist %s", tablePack)
 		}
 		cursor := bucket.Cursor()
 
-		var account uint32 = 0
-		totalAccounts := height * this.accountsPerBlock
-		for key, value := cursor.First(); key != nil && account < totalAccounts; key, value = cursor.Next() {
-			number := binary.BigEndian.Uint32(key)
-			if err = callback(number, value); err != nil {
+		var pack uint32 = 0
+		for key, value := cursor.First(); key != nil && pack < height; key, value = cursor.Next() {
+			index := binary.BigEndian.Uint32(key)
+			if err = callback(index, value); err != nil {
 				return err
 			}
-			account++
+			pack++
 		}
 
-		if account < totalAccounts {
-			return fmt.Errorf("Failed to load accounts #%d - #%d", account, totalAccounts)
+		if pack != height {
+			return fmt.Errorf("Failed to load account packs, loaded %d, height %d", pack, height)
 		}
 
 		return nil
@@ -143,7 +139,7 @@ func (this *StorageBoltDb) Load(callback func(number uint32, serialized []byte) 
 	return
 }
 
-func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error {
+func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(number uint32, data []byte) error) error) error {
 	flush := false
 
 	func() {
@@ -163,16 +159,13 @@ func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRip
 			binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
 			this.accountTxesCache[&numberAndId] = &txRipemd160Hash
 		})
-		affectedAccounts(func(number uint32, data []byte) (err error) {
-			this.accountsCache[number] = make([]byte, len(data))
-			copy(this.accountsCache[number], data)
+		affectedPacks(func(index uint32, data []byte) (err error) {
+			this.packsCache[index] = make([]byte, len(data))
+			copy(this.packsCache[index], data)
 			return
 		})
 
 		flush = len(this.blocksCache) > blocksCacheLimit
-		flush = flush || len(this.accountsCache) > accountsCacheLimit
-		flush = flush || len(this.txesCache) > txesCacheLimit
-		flush = flush || len(this.accountTxesCache) > accountTxesCacheLimit
 	}()
 
 	if flush {
@@ -201,11 +194,11 @@ func (this *StorageBoltDb) Flush() error {
 				}
 			}
 
-			if bucket = tx.Bucket([]byte(tableAccount)); bucket == nil {
-				return fmt.Errorf("Table doesn't exist %s", tableAccount)
+			if bucket = tx.Bucket([]byte(tablePack)); bucket == nil {
+				return fmt.Errorf("Table doesn't exist %s", tablePack)
 			}
 
-			for number, data := range this.accountsCache {
+			for number, data := range this.packsCache {
 				buffer := [4]byte{}
 				binary.BigEndian.PutUint32(buffer[:], number)
 				if err = bucket.Put(buffer[:], data); err != nil {
@@ -246,7 +239,7 @@ func (this *StorageBoltDb) Flush() error {
 
 	if err == nil {
 		this.blocksCache = make(map[uint32][]byte)
-		this.accountsCache = make(map[uint32][]byte)
+		this.packsCache = make(map[uint32][]byte)
 		this.txesCache = make(map[[20]byte][]byte)
 		this.accountTxesCache = make(map[*[8]byte]*[20]byte)
 	}

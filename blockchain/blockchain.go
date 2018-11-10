@@ -76,29 +76,15 @@ func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
 }
 
 func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
-	var index uint32 = 0
-	var i uint32 = 0
-	accounts := make([]*accounter.Account, defaults.AccountsPerBlock)
-
-	height, err := storage.Load(func(number uint32, data []byte) error {
-		var account accounter.Account
-		if err := utils.Deserialize(&account, bytes.NewBuffer(data)); err != nil {
+	height, err := storage.Load(func(index uint32, data []byte) error {
+		var pack accounter.PackBase
+		if err := utils.Deserialize(&pack, bytes.NewBuffer(data)); err != nil {
 			return err
 		}
-		accounts[i] = &account
-		i += 1
-		if i == defaults.AccountsPerBlock {
-			i = 0
-			accounterInstance.AppendPack(accounter.NewPackWithAccounts(index, accounts))
-			index += 1
-		}
+		accounterInstance.AppendPack(&pack)
 		return nil
 	})
 	if err != nil {
-		return
-	}
-	if i != 0 {
-		err = errors.New("Accounts count doesn't fit the blockchain requirement")
 		return
 	}
 	if height != index {
@@ -152,7 +138,7 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		return nil, errors.New("Invalid block: " + err.Error())
 	}
 
-	newSafebox, updatedAccounts, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
+	newSafebox, updatedPacks, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +172,8 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 			}
 		},
 		func(fn func(number uint32, data []byte) error) error {
-			for _, account := range updatedAccounts {
-				if err := fn(account.Number, utils.Serialize(account)); err != nil {
+			for _, pack := range updatedPacks {
+				if err := fn(pack.GetIndex(), utils.Serialize(pack)); err != nil {
 					return err
 				}
 			}

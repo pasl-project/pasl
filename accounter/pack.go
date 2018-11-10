@@ -23,40 +23,42 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"io"
 
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/utils"
 )
 
-type pack struct {
-	index    uint32
-	accounts []*Account
-	hash     [32]byte
-	dirty    bool
+type PackBase struct {
+	accounts             []Account
+	dirty                bool
+	hash                 [32]byte
+	index                uint32
 }
 
-type packBase interface {
-	GetHash() []byte
-	GetAccounts() []*Account
-	MarkDirty()
+type packSerialized struct {
+	Accounts             []Account
+	Dirty                bool
+	Hash                 [32]byte
+	Index                uint32
 }
 
-func NewPackWithAccounts(index uint32, accounts []*Account) packBase {
-	accountsCopy := make([]*Account, len(accounts))
+func NewPackWithAccounts(index uint32, accounts []Account) *PackBase {
+	accountsCopy := make([]Account, len(accounts))
 	copy(accountsCopy, accounts)
-	return &pack{
-		index:    index,
-		accounts: accountsCopy,
-		dirty:    true,
+	return &PackBase{
+		accounts:             accountsCopy,
+		dirty:                true,
+		index:                index,
 	}
 }
 
-func NewPack(index uint32, miner *crypto.Public, timestamp uint32) packBase {
-	accounts := make([]*Account, defaults.AccountsPerBlock)
+func NewPack(index uint32, miner *crypto.Public, timestamp uint32) *PackBase {
+	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i, _ := range accounts {
-		accounts[i] = &Account{
+		accounts[i] = Account{
 			Number:          number,
 			PublicKey:       *miner,
 			Balance:         0,
@@ -71,7 +73,7 @@ func NewPack(index uint32, miner *crypto.Public, timestamp uint32) packBase {
 	return NewPackWithAccounts(index, accounts)
 }
 
-func (this *pack) GetHash() []byte {
+func (this *PackBase) GetHash() []byte {
 	if !this.dirty {
 		return this.hash[:]
 	}
@@ -92,10 +94,36 @@ func (this *pack) GetHash() []byte {
 	return this.hash[:]
 }
 
-func (this *pack) GetAccounts() []*Account {
-	return this.accounts
+func (this *PackBase) GetIndex() uint32 {
+	return this.index
 }
 
-func (this *pack) MarkDirty() {
+func (this *PackBase) GetAccount(offset int) *Account {
+	return &this.accounts[offset]
+}
+
+func (this *PackBase) MarkDirty() {
 	this.dirty = true
+}
+
+func (this *PackBase) Serialize(w io.Writer) error {
+	_, err := w.Write(utils.Serialize(utils.Serialize(packSerialized{
+		Accounts:             this.accounts,
+		Dirty:                this.dirty,
+		Hash:                 this.hash,
+		Index:                this.index,
+	})))
+	return err
+}
+
+func (this *PackBase) Deserialize(r io.Reader) error {
+	var unpacked packSerialized
+	if err := utils.Deserialize(&unpacked, r); err != nil {
+		return err
+	}
+	this.accounts = unpacked.Accounts
+	this.dirty = unpacked.Dirty
+	this.hash = unpacked.Hash
+	this.index = unpacked.Index
+	return nil
 }

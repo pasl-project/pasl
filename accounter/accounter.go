@@ -28,10 +28,10 @@ import (
 )
 
 type Accounter struct {
-	hash  []byte
-	packs []packBase
 	dirty bool
+	hash  []byte
 	lock  sync.RWMutex
+	packs []*PackBase
 }
 
 func NewAccounter() *Accounter {
@@ -39,9 +39,9 @@ func NewAccounter() *Accounter {
 	copy(hash[:], defaults.GenesisSafeBox[:])
 
 	return &Accounter{
-		hash:  hash,
-		packs: make([]packBase, 0),
 		dirty: false,
+		hash:  hash,
+		packs: make([]*PackBase, 0),
 	}
 }
 
@@ -52,13 +52,13 @@ func (this *Accounter) Copy() *Accounter {
 	hash := make([]byte, 32)
 	copy(hash[:], this.hash)
 
-	packs := make([]packBase, len(this.packs))
+	packs := make([]*PackBase, len(this.packs))
 	copy(packs[:], this.packs)
 
 	return &Accounter{
+		dirty: this.dirty,
 		hash:  hash,
 		packs: packs,
-		dirty: this.dirty,
 	}
 }
 
@@ -87,7 +87,7 @@ func (this *Accounter) GetState() (uint32, []byte) {
 	return this.getHeightUnsafe(), this.getHashUnsafe()
 }
 
-func (this *Accounter) getPackContainingAccountUnsafe(number uint32) packBase {
+func (this *Accounter) getPackContainingAccountUnsafe(number uint32) *PackBase {
 	pack := number / uint32(defaults.AccountsPerBlock)
 	return this.packs[pack]
 }
@@ -96,36 +96,39 @@ func (this *Accounter) GetAccount(number uint32) *Account {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	offset := number % uint32(defaults.AccountsPerBlock)
-	return this.getPackContainingAccountUnsafe(number).GetAccounts()[offset]
+	offset := number % defaults.AccountsPerBlock
+	return this.getPackContainingAccountUnsafe(number).GetAccount(int(offset))
 }
 
-func (this *Accounter) MarkAccountDirty(number uint32) {
+func (this *Accounter) MarkAccountDirty(number uint32) *PackBase {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	this.dirty = true
-	this.getPackContainingAccountUnsafe(number).MarkDirty()
+	pack := this.getPackContainingAccountUnsafe(number)
+	pack.MarkDirty()
+
+	return pack
 }
 
-func (this *Accounter) appendPackUnsafe(pack packBase) []*Account {
+func (this *Accounter) appendPackUnsafe(pack *PackBase) {
 	this.packs = append(this.packs, pack)
 	this.dirty = true
-	return pack.GetAccounts()
 }
 
-func (this *Accounter) AppendPack(pack packBase) []*Account {
+func (this *Accounter) AppendPack(pack *PackBase) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	return this.appendPackUnsafe(pack)
+	this.appendPackUnsafe(pack)
 }
 
-func (this *Accounter) NewPack(miner *crypto.Public, timestamp uint32) (newAccounts []*Account, newIndex uint32) {
+func (this *Accounter) NewPack(miner *crypto.Public, timestamp uint32) (pack *PackBase, newIndex uint32) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	newIndex = this.getHeightUnsafe()
-	pack := NewPack(this.getHeightUnsafe(), miner, timestamp)
-	return this.appendPackUnsafe(pack), newIndex
+	pack = NewPack(this.getHeightUnsafe(), miner, timestamp)
+	this.appendPackUnsafe(pack)
+	return pack, newIndex
 }

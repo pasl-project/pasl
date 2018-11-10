@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"io"
+	"math/big"
 
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
@@ -32,6 +33,7 @@ import (
 
 type PackBase struct {
 	accounts             []Account
+	cumulativeDifficulty *big.Int
 	dirty                bool
 	hash                 [32]byte
 	index                uint32
@@ -39,22 +41,24 @@ type PackBase struct {
 
 type packSerialized struct {
 	Accounts             []Account
+	CumulativeDifficulty []byte
 	Dirty                bool
 	Hash                 [32]byte
 	Index                uint32
 }
 
-func NewPackWithAccounts(index uint32, accounts []Account) *PackBase {
+func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty *big.Int) *PackBase {
 	accountsCopy := make([]Account, len(accounts))
 	copy(accountsCopy, accounts)
 	return &PackBase{
 		accounts:             accountsCopy,
+		cumulativeDifficulty: big.NewInt(0).Set(cumulativeDifficulty),
 		dirty:                true,
 		index:                index,
 	}
 }
 
-func NewPack(index uint32, miner *crypto.Public, timestamp uint32) *PackBase {
+func NewPack(index uint32, miner *crypto.Public, timestamp uint32, cumulativeDifficulty *big.Int) *PackBase {
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i, _ := range accounts {
@@ -70,7 +74,7 @@ func NewPack(index uint32, miner *crypto.Public, timestamp uint32) *PackBase {
 		number++
 	}
 
-	return NewPackWithAccounts(index, accounts)
+	return NewPackWithAccounts(index, accounts, cumulativeDifficulty)
 }
 
 func (this *PackBase) GetHash() []byte {
@@ -102,6 +106,10 @@ func (this *PackBase) GetAccount(offset int) *Account {
 	return &this.accounts[offset]
 }
 
+func (this *PackBase) GetCumulativeDifficulty() *big.Int {
+	return this.cumulativeDifficulty
+}
+
 func (this *PackBase) MarkDirty() {
 	this.dirty = true
 }
@@ -109,6 +117,7 @@ func (this *PackBase) MarkDirty() {
 func (this *PackBase) Serialize(w io.Writer) error {
 	_, err := w.Write(utils.Serialize(utils.Serialize(packSerialized{
 		Accounts:             this.accounts,
+		CumulativeDifficulty: this.cumulativeDifficulty.Bytes(),
 		Dirty:                this.dirty,
 		Hash:                 this.hash,
 		Index:                this.index,
@@ -122,6 +131,7 @@ func (this *PackBase) Deserialize(r io.Reader) error {
 		return err
 	}
 	this.accounts = unpacked.Accounts
+	this.cumulativeDifficulty = big.NewInt(0).SetBytes(unpacked.CumulativeDifficulty)
 	this.dirty = unpacked.Dirty
 	this.hash = unpacked.Hash
 	this.index = unpacked.Index

@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 	"time"
 
@@ -55,7 +56,7 @@ func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
 		return nil, err
 	}
 
-	height, safeboxHash := accounter.GetState()
+	height, safeboxHash, _ := accounter.GetState()
 	utils.Tracef("Blockchain loaded, height %d safeboxHash %s", height, hex.EncodeToString(safeboxHash))
 
 	getPrevTarget := func() common.TargetBase {
@@ -87,7 +88,8 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	if err != nil {
 		return
 	}
-	if height != index {
+	accounterHeight, _, _ := accounterInstance.GetState()
+	if height != accounterHeight {
 		err = errors.New("Non-consistent accounts count compared to the blockchain height")
 		return
 	}
@@ -119,7 +121,7 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 
 	// TODO: block.Header.Time, implement NAT
 	// TODO: check block hash for genesis block
-	height, safeboxHash := this.safebox.GetState()
+	height, safeboxHash, _ := this.safebox.GetState()
 	if height != block.GetIndex() {
 		return nil, nil
 	}
@@ -138,12 +140,12 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		return nil, errors.New("Invalid block: " + err.Error())
 	}
 
-	newSafebox, updatedPacks, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations())
+	newSafebox, updatedPacks, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
 	if err != nil {
 		return nil, err
 	}
 
-	newHeight, _ := newSafebox.GetState()
+	newHeight, _, _ := newSafebox.GetState()
 	if fork := safebox.TryActivateFork(newHeight, block.GetPrevSafeBoxHash()); fork != nil {
 		this.target = block.GetTarget()
 		newSafebox.SetFork(fork)
@@ -301,7 +303,7 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, ti
 		minerSerialized = utils.Serialize(miner)
 	}
 
-	height, safeboxHash := this.safebox.GetState()
+	height, safeboxHash, _ := this.safebox.GetState()
 
 	operations := make([]tx.Tx, 0)
 	this.txPool.Range(func(key, value interface{}) bool {
@@ -348,8 +350,12 @@ func (this *Blockchain) GetBlock(index uint32) safebox.BlockBase {
 	return block
 }
 
-func (this *Blockchain) GetState() (height uint32, safeboxHash []byte) {
+func (this *Blockchain) GetState() (height uint32, safeboxHash []byte, cumulativeDifficulty *big.Int) {
 	return this.safebox.GetState()
+}
+
+func (this *Blockchain) GetHashrate(blockIndex, blocksCount uint32) uint64 {
+	return this.safebox.GetHashrate(blockIndex, blocksCount)
 }
 
 func (this *Blockchain) GetAccount(number uint32) *accounter.Account {

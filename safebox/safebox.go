@@ -21,6 +21,7 @@ package safebox
 
 import (
 	"errors"
+	"math/big"
 	"sync"
 	"sync/atomic"
 
@@ -38,18 +39,18 @@ type Safebox struct {
 }
 
 func NewSafebox(accounter *accounter.Accounter) *Safebox {
-	height, SafeboxHash := accounter.GetState()
+	height, SafeboxHash, _ := accounter.GetState()
 	return &Safebox{
 		accounter: accounter,
 		fork:      GetActiveFork(height, SafeboxHash),
 	}
 }
 
-func (this *Safebox) getStateUnsafe() (uint32, []byte) {
+func (this *Safebox) getStateUnsafe() (uint32, []byte, *big.Int) {
 	return this.accounter.GetState()
 }
 
-func (this *Safebox) GetState() (uint32, []byte) {
+func (this *Safebox) GetState() (uint32, []byte, *big.Int) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
@@ -79,7 +80,7 @@ func (this *Safebox) Validate(operation *tx.Tx) error {
 	defer this.lock.Unlock()
 
 	// TODO: code duplicaion
-	height, _ := this.getStateUnsafe()
+	height, _, _ := this.getStateUnsafe()
 	_, err := operation.Validate(func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight < height {
@@ -109,7 +110,7 @@ func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
 	return nil
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx) (*Safebox, []*accounter.PackBase, map[*accounter.Account]*tx.Tx, error) {
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, []*accounter.PackBase, map[*accounter.Account]*tx.Tx, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -128,7 +129,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 	}
 	updatedPacks = append(updatedPacks, newPack)
 
-	height, _ := this.getStateUnsafe()
+	height, _, _ := this.getStateUnsafe()
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight < height {
@@ -168,7 +169,7 @@ func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {
 
 	timestamps = make([]uint32, 0, count)
 
-	height, _ := this.accounter.GetState()
+	height, _, _ := this.accounter.GetState()
 	var i uint32 = 0
 	for ; i < count && height > 0; i++ {
 		if account := this.accounter.GetAccount(height*uint32(defaults.AccountsPerBlock) - 1); account != nil {
@@ -182,11 +183,26 @@ func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {
 	return timestamps
 }
 
+func (this *Safebox) GetHashrate(blockIndex, blocksCount uint32) uint64 {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	height, _, _ := this.accounter.GetState()
+	if blockIndex >= height {
+		return 0
+	}
+	difficulty, timestamp := this.accounter.GetCumulativeDifficultyAndTimestamp(blockIndex)
+	prevDifficulty, prevTimestamp := this.accounter.GetCumulativeDifficultyAndTimestamp(blockIndex - utils.MinUint32(blockIndex, blocksCount))
+	difficulty.Sub(difficulty, prevDifficulty)
+	difficulty.Div(difficulty, big.NewInt(int64(timestamp-prevTimestamp)))
+	return difficulty.Uint64()
+}
+
 func (this *Safebox) GetAccount(number uint32) *accounter.Account {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	height, _ := this.getStateUnsafe()
+	height, _, _ := this.getStateUnsafe()
 	accountPack := number / uint32(defaults.AccountsPerBlock)
 	if accountPack+defaults.MaturationHeight < height {
 		account := *this.accounter.GetAccount(number)

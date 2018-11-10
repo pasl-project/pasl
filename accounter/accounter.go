@@ -21,6 +21,7 @@ package accounter
 
 import (
 	"crypto/sha256"
+	"math/big"
 	"sync"
 
 	"github.com/pasl-project/pasl/crypto"
@@ -80,16 +81,31 @@ func (this *Accounter) getHeightUnsafe() uint32 {
 	return uint32(len(this.packs))
 }
 
-func (this *Accounter) GetState() (uint32, []byte) {
+func (this *Accounter) GetState() (uint32, []byte, *big.Int) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return this.getHeightUnsafe(), this.getHashUnsafe()
+	return this.getHeightUnsafe(), this.getHashUnsafe(), this.getCumulativeDifficultyUnsafe()
+}
+
+func (this *Accounter) getCumulativeDifficultyUnsafe() *big.Int {
+	if len(this.packs) > 0 {
+		return this.packs[len(this.packs)-1].GetCumulativeDifficulty()
+	}
+	return big.NewInt(0)
 }
 
 func (this *Accounter) getPackContainingAccountUnsafe(number uint32) *PackBase {
 	pack := number / uint32(defaults.AccountsPerBlock)
 	return this.packs[pack]
+}
+
+func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.Int, uint32) {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	pack := this.getPackContainingAccountUnsafe(index)
+	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).Timestamp
 }
 
 func (this *Accounter) GetAccount(number uint32) *Account {
@@ -123,12 +139,13 @@ func (this *Accounter) AppendPack(pack *PackBase) {
 	this.appendPackUnsafe(pack)
 }
 
-func (this *Accounter) NewPack(miner *crypto.Public, timestamp uint32) (pack *PackBase, newIndex uint32) {
+func (this *Accounter) NewPack(miner *crypto.Public, timestamp uint32, difficulty *big.Int) (pack *PackBase, newIndex uint32) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	newIndex = this.getHeightUnsafe()
-	pack = NewPack(this.getHeightUnsafe(), miner, timestamp)
+	cumulativeDifficulty := big.NewInt(0).Add(this.getCumulativeDifficultyUnsafe(), difficulty)
+	pack = NewPack(this.getHeightUnsafe(), miner, timestamp, cumulativeDifficulty)
 	this.appendPackUnsafe(pack)
 	return pack, newIndex
 }

@@ -153,7 +153,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 }
 
 func (this *manager) sync() bool {
-	nodeHeight, _ := this.blockchain.GetState()
+	nodeHeight, _, _ := this.blockchain.GetState()
 
 	candidates := make([]*PascalConnection, 0)
 	this.initializedConnections.Range(func(conn, height interface{}) bool {

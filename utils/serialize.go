@@ -175,6 +175,14 @@ func Serialize(struc interface{}) []byte {
 			if err := value.Addr().Interface().(Serializable).Serialize(serialized); err != nil {
 				Panicf("Custom type serialization failed: %v", err)
 			}
+		case reflect.Bool:
+			var val uint8
+			if value.Bool() == true {
+				val = 1
+			} else {
+				val = 0
+			}
+			binary.Write(serialized, binary.LittleEndian, val)
 		case reflect.Uint8:
 			binary.Write(serialized, binary.LittleEndian, uint8(value.Uint()))
 		case reflect.Uint16:
@@ -209,11 +217,19 @@ func Deserialize(struc interface{}, r io.Reader) error {
 		switch kind := value.Kind(); kind {
 		case reflect.Ptr:
 			if err := value.Interface().(Serializable).Deserialize(r); err != nil {
-				Panicf("Custom type deserialization failed: %v", err)
+				Panicf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
 			}
 		case reflect.Struct:
 			if err := value.Addr().Interface().(Serializable).Deserialize(r); err != nil {
-				Panicf("Custom type deserialization failed: %v", err)
+				Panicf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
+			}
+		case reflect.Bool:
+			var val uint8
+			binary.Read(r, binary.LittleEndian, &val)
+			if val == 0 {
+				value.SetBool(false)
+			} else {
+				value.SetBool(true)
 			}
 		case reflect.Uint8:
 			var val uint8

@@ -70,6 +70,33 @@ var exportCommand cli.Command = cli.Command{
 	},
 }
 
+func getMain(ctx *cli.Context) error {
+	return cli.ShowSubcommandHelp(ctx)
+}
+
+func getHeight(ctx *cli.Context) error {
+	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain) error {
+		height, _, _ := blockchain.GetState()
+		fmt.Fprintf(ctx.App.Writer, "%d\n", height)
+		return nil
+	})
+}
+
+var getCommand cli.Command = cli.Command{
+	Action:      getMain,
+	Name:        "get",
+	Usage:       "Get blockchain info",
+	Description: "",
+	Subcommands: []cli.Command{
+		{
+			Action:      getHeight,
+			Name:        "height",
+			Usage:       "Get current height",
+			Description: "",
+		},
+	},
+}
+
 var p2pPortFlag cli.UintFlag = cli.UintFlag{
 	Name:  "p2p-bind-port",
 	Usage: "P2P bind port",
@@ -166,6 +193,7 @@ func main() {
 	app.Action = run
 	app.Commands = []cli.Command{
 		exportCommand,
+		getCommand,
 	}
 	app.Flags = []cli.Flag{
 		p2pPortFlag,

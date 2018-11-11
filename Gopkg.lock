@@ -2,6 +2,24 @@
 
 
 [[projects]]
+  name = "bitbucket.org/creachadair/jrpc2"
+  packages = [
+    ".",
+    "channel",
+    "code",
+    "metrics",
+    "server"
+  ]
+  revision = "07fc6df9243b81e6def779df5786a88c17dd0502"
+  version = "v0.0.30"
+
+[[projects]]
+  name = "bitbucket.org/creachadair/stringset"
+  packages = ["."]
+  revision = "f00feb9f89a58c9610381310efb048d121923a81"
+  version = "v0.0.3"
+
+[[projects]]
   name = "github.com/boltdb/bolt"
   packages = ["."]
   revision = "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
@@ -32,6 +50,12 @@
   version = "1.0.3"
 
 [[projects]]
+  name = "github.com/urfave/cli"
+  packages = ["."]
+  revision = "cfb38830724cc34fedffe9a2a29fb54fa9169cd1"
+  version = "v1.20.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/xiphon/ellipticbinary"
   packages = ["."]
@@ -45,6 +69,12 @@
 
 [[projects]]
   branch = "master"
+  name = "golang.org/x/sync"
+  packages = ["semaphore"]
+  revision = "42b317875d0fa942474b76e1b46a6060d720ae6e"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
   revision = "37707fdb30a5b38865cfb95e5aab41707daec7fd"
@@ -52,6 +82,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "51e7ddd3855967df58263489374c8f04a691a6ee74ea1db2c7817afade7baf50"
+  inputs-digest = "b6b6a0b233a935fe3572a33a7da9d6b7361dc27ccdbd89e680bfac45e0815558"
   solver-name = "gps-cdcl"
   solver-version = 1

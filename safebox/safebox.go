@@ -46,6 +46,13 @@ func NewSafebox(accounter *accounter.Accounter) *Safebox {
 	}
 }
 
+func (this *Safebox) ToBlob() []byte {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	return this.accounter.ToBlob()
+}
+
 func (this *Safebox) getStateUnsafe() (uint32, []byte, *big.Int) {
 	return this.accounter.GetState()
 }

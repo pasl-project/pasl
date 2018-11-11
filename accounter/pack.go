@@ -77,13 +77,8 @@ func NewPack(index uint32, miner *crypto.Public, timestamp uint32, cumulativeDif
 	return NewPackWithAccounts(index, accounts, cumulativeDifficulty)
 }
 
-func (this *PackBase) GetHash() []byte {
-	if !this.dirty {
-		return this.hash[:]
-	}
-
-	// TODO: generalized serialization
-	buf := &bytes.Buffer{}
+func (this *PackBase) ToBlob() []byte {
+	buf := bytes.NewBuffer([]byte(""))
 	binary.Write(buf, binary.LittleEndian, this.index)
 	for _, it := range this.accounts {
 		binary.Write(buf, binary.LittleEndian, it.Number)
@@ -93,7 +88,16 @@ func (this *PackBase) GetHash() []byte {
 		binary.Write(buf, binary.LittleEndian, it.Operations)
 	}
 	binary.Write(buf, binary.LittleEndian, this.accounts[0].GetTimestamp())
-	this.hash = sha256.Sum256(buf.Bytes())
+	return buf.Bytes()
+}
+
+func (this *PackBase) GetHash() []byte {
+	if !this.dirty {
+		return this.hash[:]
+	}
+
+	// TODO: generalized serialization
+	this.hash = sha256.Sum256(this.ToBlob())
 	this.dirty = false
 	return this.hash[:]
 }

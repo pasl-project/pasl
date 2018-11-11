@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package accounter
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"math/big"
 	"sync"
@@ -61,6 +62,17 @@ func (this *Accounter) Copy() *Accounter {
 		hash:  hash,
 		packs: packs,
 	}
+}
+
+func (this *Accounter) ToBlob() []byte {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	result := bytes.NewBuffer([]byte(""))
+	for _, pack := range this.packs {
+		result.Write(pack.ToBlob())
+	}
+	return result.Bytes()
 }
 
 func (this *Accounter) getHashUnsafe() []byte {

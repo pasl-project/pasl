@@ -401,3 +401,10 @@ func (this *Blockchain) GetBlockOperations(index uint32) (txesData []tx.Tx) {
 
 	return block.GetOperations()
 }
+
+func (this *Blockchain) ExportSafebox() []byte {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	return this.safebox.ToBlob()
+}

@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/signal"
@@ -41,6 +42,33 @@ import (
 	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
 )
+
+func exportMain(ctx *cli.Context) error {
+	return cli.ShowSubcommandHelp(ctx)
+}
+
+func exportSafebox(ctx *cli.Context) error {
+	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain) error {
+		blob := blockchain.ExportSafebox()
+		fmt.Fprint(ctx.App.Writer, hex.EncodeToString(blob))
+		return nil
+	})
+}
+
+var exportCommand cli.Command = cli.Command{
+	Action:      exportMain,
+	Name:        "export",
+	Usage:       "Export blockchain data",
+	Description: "",
+	Subcommands: []cli.Command{
+		{
+			Action:      exportSafebox,
+			Name:        "safebox",
+			Usage:       "Export safebox contents",
+			Description: "",
+		},
+	},
+}
 
 var p2pPortFlag cli.UintFlag = cli.UintFlag{
 	Name:  "p2p-bind-port",
@@ -136,6 +164,9 @@ func main() {
 	app.Usage = "PASL command line interface"
 	app.Version = defaults.UserAgent
 	app.Action = run
+	app.Commands = []cli.Command{
+		exportCommand,
+	}
 	app.Flags = []cli.Flag{
 		p2pPortFlag,
 		dataDirFlag,

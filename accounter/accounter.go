@@ -71,6 +71,7 @@ func (this *Accounter) ToBlob() []byte {
 	result := bytes.NewBuffer([]byte(""))
 	for _, pack := range this.packs {
 		result.Write(pack.ToBlob())
+		result.Write(pack.GetHash())
 	}
 	return result.Bytes()
 }

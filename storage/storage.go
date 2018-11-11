@@ -44,6 +44,7 @@ const (
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
+	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
 	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte) error) error) error
 	GetBlock(index uint32) (data []byte, err error)
 	Flush() error
@@ -137,6 +138,45 @@ func (this *StorageBoltDb) Load(callback func(index uint32, serialized []byte) e
 		return nil
 	})
 	return
+}
+
+func (this *StorageBoltDb) LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error {
+	return this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
+			return fmt.Errorf("Table doesn't exist %s", tableBlock)
+		}
+
+		var height uint32
+		if toHeight == nil {
+			height = uint32(bucket.Stats().KeyN)
+		} else {
+			height = *toHeight
+		}
+
+		cursor := bucket.Cursor()
+		var total uint32 = 0
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			index := binary.BigEndian.Uint32(key)
+			if index >= height {
+				break
+			}
+			if index != total {
+				return fmt.Errorf("Failed to load block, unexpected index %d, should be %d", index, total)
+			}
+			if err := callback(index, value); err != nil {
+				return err
+			}
+			total++
+		}
+
+		if total != height {
+			return fmt.Errorf("Failed to load blocks, loaded %d, height %d", total, height)
+		}
+
+		return nil
+	})
 }
 
 func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(number uint32, data []byte) error) error) error {

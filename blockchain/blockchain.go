@@ -47,13 +47,16 @@ type Blockchain struct {
 	target  common.TargetBase
 }
 
-func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
+func NewBlockchain(storage storage.Storage, height *uint32) (*Blockchain, error) {
 	accounter := accounter.NewAccounter()
 	var topBlock *safebox.BlockMetadata
 	var err error
-	if topBlock, err = load(storage, accounter); err != nil {
-		utils.Tracef("Error loading blockchain: %s", err.Error())
-		return nil, err
+
+	if height == nil {
+		if topBlock, err = load(storage, accounter); err != nil {
+			utils.Tracef("Error loading blockchain: %s", err.Error())
+			return nil, err
+		}
 	}
 
 	getPrevTarget := func() common.TargetBase {
@@ -63,14 +66,31 @@ func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
 		return common.NewTarget(defaults.MinTarget)
 	}
 
-	safebox := safebox.NewSafebox(accounter)
-	target := safebox.GetFork().GetNextTarget(getPrevTarget(), safebox.GetLastTimestamps)
+	safeboxInstance := safebox.NewSafebox(accounter)
+	target := safeboxInstance.GetFork().GetNextTarget(getPrevTarget(), safeboxInstance.GetLastTimestamps)
 
-	return &Blockchain{
+	blockchain := &Blockchain{
 		storage: storage,
-		safebox: safebox,
+		safebox: safeboxInstance,
 		target:  common.NewTarget(target),
-	}, nil
+	}
+
+	if height == nil {
+		return blockchain, nil
+	}
+
+	if err = storage.LoadBlocks(height, func(index uint32, data []byte) error {
+		var blockMeta safebox.BlockMetadata
+		if err := utils.Deserialize(&blockMeta, bytes.NewBuffer(data)); err != nil {
+			return err
+		}
+		_, err := blockchain.AddBlock(&blockMeta, nil, false)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	return blockchain, nil
 }
 
 func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
@@ -107,7 +127,7 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool) (safebox.BlockBase, error) {
+func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool, store bool) (safebox.BlockBase, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -148,39 +168,41 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 		newSafebox.SetFork(fork)
 	}
 
-	err = this.storage.Store(
-		block.GetIndex(),
-		utils.Serialize(meta),
-		func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
-			for _, tx := range block.GetOperations() {
-				serialized := bytes.NewBuffer([]byte(""))
-				err := tx.Serialize(serialized)
-				if err != nil {
-					utils.Panicf("Failed to serailize tx")
+	if store {
+		err = this.storage.Store(
+			block.GetIndex(),
+			utils.Serialize(meta),
+			func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
+				for _, tx := range block.GetOperations() {
+					serialized := bytes.NewBuffer([]byte(""))
+					err := tx.Serialize(serialized)
+					if err != nil {
+						utils.Panicf("Failed to serailize tx")
+					}
+					txRipemd160Hash := [20]byte{}
+					copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+					txes(txRipemd160Hash, serialized.Bytes())
 				}
-				txRipemd160Hash := [20]byte{}
-				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-				txes(txRipemd160Hash, serialized.Bytes())
-			}
-		},
-		func(accountOperations func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)) {
-			for account, tx := range affectedByTx {
-				txRipemd160Hash := [20]byte{}
-				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-				accountOperations(account.Number, account.OperationsTotal, txRipemd160Hash)
-			}
-		},
-		func(fn func(number uint32, data []byte) error) error {
-			for _, pack := range updatedPacks {
-				if err := fn(pack.GetIndex(), utils.Serialize(pack)); err != nil {
-					return err
+			},
+			func(accountOperations func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)) {
+				for account, tx := range affectedByTx {
+					txRipemd160Hash := [20]byte{}
+					copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+					accountOperations(account.Number, account.OperationsTotal, txRipemd160Hash)
 				}
-			}
-			return nil
-		})
-	if err != nil {
-		utils.Tracef("Error storing blockchain state: %v", err)
-		return nil, err
+			},
+			func(fn func(number uint32, data []byte) error) error {
+				for _, pack := range updatedPacks {
+					if err := fn(pack.GetIndex(), utils.Serialize(pack)); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			utils.Tracef("Error storing blockchain state: %v", err)
+			return nil, err
+		}
 	}
 
 	this.txPoolCleanUpUnsafe(block.GetOperations())
@@ -200,7 +222,7 @@ func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, paren
 		Payload:         block.Header.Payload,
 		PrevSafeBoxHash: block.Header.PrevSafeboxHash,
 		Operations:      block.Operations,
-	}, parentNotFound)
+	}, parentNotFound, true)
 }
 
 func (this *Blockchain) AddOperation(operation *tx.Tx) (new bool, err error) {

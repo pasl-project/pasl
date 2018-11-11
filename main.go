@@ -55,6 +55,12 @@ func exportSafebox(ctx *cli.Context) error {
 	})
 }
 
+var heightFlagValue uint
+var heightFlag cli.UintFlag = cli.UintFlag{
+	Name:        "height",
+	Usage:       "Export safebox at specific height",
+	Destination: &heightFlagValue,
+}
 var exportCommand cli.Command = cli.Command{
 	Action:      exportMain,
 	Name:        "export",
@@ -66,6 +72,9 @@ var exportCommand cli.Command = cli.Command{
 			Name:        "safebox",
 			Usage:       "Export safebox contents",
 			Description: "",
+			Flags: []cli.Flag{
+				heightFlag,
+			},
 		},
 	},
 }
@@ -120,12 +129,19 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain)
 		return fmt.Errorf("Failed to create data directory %v", err)
 	}
 	dbFileName := filepath.Join(dataDir, "storage.db")
-	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage storage.Storage) error {
-		blockchain, err := blockchain.NewBlockchain(storage)
+	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage storage.Storage) (err error) {
+		var blockchainInstance *blockchain.Blockchain
+		if ctx.IsSet(heightFlag.GetName()) {
+			var height uint32
+			height = uint32(heightFlagValue)
+			blockchainInstance, err = blockchain.NewBlockchain(storage, &height)
+		} else {
+			blockchainInstance, err = blockchain.NewBlockchain(storage, nil)
+		}
 		if err != nil {
 			return err
 		}
-		return fn(blockchain)
+		return fn(blockchainInstance)
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to initialize storage. %v", err)

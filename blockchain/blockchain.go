@@ -56,9 +56,6 @@ func NewBlockchain(storage storage.Storage) (*Blockchain, error) {
 		return nil, err
 	}
 
-	height, safeboxHash, _ := accounter.GetState()
-	utils.Tracef("Blockchain loaded, height %d safeboxHash %s", height, hex.EncodeToString(safeboxHash))
-
 	getPrevTarget := func() common.TargetBase {
 		if topBlock != nil {
 			return common.NewTarget(topBlock.Target)

@@ -52,9 +52,7 @@ var dataDirFlag cli.StringFlag = cli.StringFlag{
 	Usage: "Directory to store blockchain files",
 }
 
-func run(ctx *cli.Context) error {
-	utils.Tracef(defaults.UserAgent)
-
+func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain) error) error {
 	dataDir := ctx.GlobalString(dataDirFlag.GetName())
 	if dataDir == "" {
 		var err error
@@ -72,9 +70,23 @@ func run(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
+		return fn(blockchain)
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to initialize storage. %v", err)
+	}
+	return nil
+}
+
+func run(cliContext *cli.Context) error {
+	utils.Ftracef(cliContext.App.Writer, defaults.UserAgent)
+
+	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain) error {
+		height, safeboxHash, cumulativeDifficulty := blockchain.GetState()
+		utils.Ftracef(cliContext.App.Writer, "Blockchain loaded, height %d safeboxHash %s cumulativeDifficulty %s", height, hex.EncodeToString(safeboxHash), cumulativeDifficulty.String())
 
 		config := network.Config{
-			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, ctx.GlobalUint(p2pPortFlag.GetName())),
+			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, cliContext.GlobalUint(p2pPortFlag.GetName())),
 			MaxIncoming:    defaults.MaxIncoming,
 			MaxOutgoing:    defaults.MaxOutgoing,
 			TimeoutConnect: defaults.TimeoutConnect,
@@ -98,7 +110,7 @@ func run(ctx *cli.Context) error {
 					for {
 						select {
 						case peer := <-peerUpdates:
-							utils.Tracef("   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
+							utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
 							node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
 						case <-ctx.Done():
 							return
@@ -111,16 +123,12 @@ func run(ctx *cli.Context) error {
 					c := make(chan os.Signal, 2)
 					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 					<-c
-					utils.Tracef("Exit signal received. Terminating...")
+					utils.Ftracef(cliContext.App.Writer, "Exit signal received. Terminating...")
 					return nil
 				})
 			})
 		})
 	})
-	if err != nil {
-		return fmt.Errorf("Failed to initialize storage. %v", err)
-	}
-	return nil
 }
 
 func main() {

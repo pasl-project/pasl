@@ -22,6 +22,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -120,6 +121,10 @@ func formatf(format string, a ...interface{}) string {
 	frames := runtime.CallersFrames(pc[:n])
 	frame, _ := frames.Next()
 	return fmt.Sprintf("%s %s %s:%d%s\n", time.Now().UTC().Format("15:04:05.000000"), fmt.Sprintf(format, a...), filepath.Base(frame.File), frame.Line, filepath.Ext(frame.Function))
+}
+
+func Ftracef(w io.Writer, format string, a ...interface{}) {
+	fmt.Fprintf(w, formatf(format, a...))
 }
 
 func Tracef(format string, a ...interface{}) {

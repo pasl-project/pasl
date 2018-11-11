@@ -21,7 +21,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -29,6 +28,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/modern-go/concurrent"
+	"github.com/urfave/cli"
 
 	"github.com/pasl-project/pasl/api"
 	"github.com/pasl-project/pasl/blockchain"
@@ -38,30 +40,31 @@ import (
 	"github.com/pasl-project/pasl/network/pasl"
 	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
-
-	"github.com/modern-go/concurrent"
 )
 
-func main() {
-	defer utils.TimeTrack(time.Now(), "Terminated, %s elapsed")
+var p2pPortFlag cli.UintFlag = cli.UintFlag{
+	Name:  "p2p-bind-port",
+	Usage: "P2P bind port",
+	Value: uint(defaults.P2PPort),
+}
+var dataDirFlag cli.StringFlag = cli.StringFlag{
+	Name:  "data-dir",
+	Usage: "Directory to store blockchain files",
+}
 
+func run(ctx *cli.Context) error {
 	utils.Tracef(defaults.UserAgent)
 
-	var p2pPort uint
-	flag.UintVar(&p2pPort, "p2p-bind-port", uint(defaults.P2PPort), "P2P bind port")
-	var dataDir string
-	flag.StringVar(&dataDir, "data-dir", "", "Directory to store blockchain files")
-	flag.Parse()
-
+	dataDir := ctx.GlobalString(dataDirFlag.GetName())
 	if dataDir == "" {
 		var err error
 		if dataDir, err = utils.GetDataDir(); err != nil {
-			utils.Panicf("Failed to obtain valid data directory path. Use --data-dir to manually specify data directory location. Error: %v", err)
+			return fmt.Errorf("Failed to obtain valid data directory path. Use %s flag to manually specify data directory location. Error: %v", dataDirFlag.GetName(), err)
 		}
 	}
 
 	if err := utils.CreateDirectory(&dataDir); err != nil {
-		utils.Panicf("Failed to create data directory %v", err)
+		return fmt.Errorf("Failed to create data directory %v", err)
 	}
 	dbFileName := filepath.Join(dataDir, "storage.db")
 	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage storage.Storage) error {
@@ -71,7 +74,7 @@ func main() {
 		}
 
 		config := network.Config{
-			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, p2pPort),
+			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, ctx.GlobalUint(p2pPortFlag.GetName())),
 			MaxIncoming:    defaults.MaxIncoming,
 			MaxOutgoing:    defaults.MaxOutgoing,
 			TimeoutConnect: defaults.TimeoutConnect,
@@ -115,6 +118,27 @@ func main() {
 		})
 	})
 	if err != nil {
-		utils.Panicf("Failed to initialize storage. %v", err)
+		return fmt.Errorf("Failed to initialize storage. %v", err)
 	}
+	return nil
+}
+
+func main() {
+	app := cli.NewApp()
+	app.Usage = "PASL command line interface"
+	app.Version = defaults.UserAgent
+	app.Action = run
+	app.Flags = []cli.Flag{
+		p2pPortFlag,
+		dataDirFlag,
+	}
+	app.CommandNotFound = func(c *cli.Context, command string) {
+		cli.ShowAppHelp(c)
+		os.Exit(1)
+	}
+	if err := app.Run(os.Args); err != nil {
+		utils.Panicf("Error running application: %v", err)
+		os.Exit(2)
+	}
+	os.Exit(0)
 }

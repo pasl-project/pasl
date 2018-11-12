@@ -112,7 +112,7 @@ func (this *PackBase) GetAccount(offset int) *Account {
 }
 
 func (this *PackBase) GetCumulativeDifficulty() *big.Int {
-	return this.cumulativeDifficulty
+	return big.NewInt(0).Set(this.cumulativeDifficulty)
 }
 
 func (this *PackBase) MarkDirty() {

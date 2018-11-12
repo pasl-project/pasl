@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/modern-go/concurrent"
 	"github.com/urfave/cli"
@@ -181,7 +180,7 @@ func run(cliContext *cli.Context) error {
 					for {
 						select {
 						case peer := <-peerUpdates:
-							utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
+							//utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
 							node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
 						case <-ctx.Done():
 							return

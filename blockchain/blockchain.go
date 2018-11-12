@@ -188,16 +188,13 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 				for account, tx := range affectedByTx {
 					txRipemd160Hash := [20]byte{}
 					copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-					accountOperations(account.Number, account.OperationsTotal, txRipemd160Hash)
+					accountOperations(account.GetNumber(), account.GetOperationsTotal(), txRipemd160Hash)
 				}
 			},
-			func(fn func(number uint32, data []byte) error) error {
+			func(fn func(number uint32, data []byte)) {
 				for _, pack := range updatedPacks {
-					if err := fn(pack.GetIndex(), utils.Serialize(pack)); err != nil {
-						return err
-					}
+					fn(pack.GetIndex(), utils.Serialize(pack))
 				}
-				return nil
 			})
 		if err != nil {
 			utils.Tracef("Error storing blockchain state: %v", err)

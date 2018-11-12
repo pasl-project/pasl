@@ -78,10 +78,10 @@ func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Accoun
 	if source == nil {
 		return nil, fmt.Errorf("Source account %d not found", this.Source)
 	}
-	if source.Operations+1 != this.OperationId {
-		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.Number, this.OperationId, source.Operations+1)
+	if source.GetOperationsCount()+1 != this.OperationId {
+		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.GetNumber(), this.OperationId, source.GetOperationsCount()+1)
 	}
-	if source.Balance < this.Fee {
+	if source.GetBalance() < this.Fee {
 		return nil, errors.New("Insufficient balance")
 	}
 
@@ -98,7 +98,7 @@ func (this *ChangeKey) Apply(index uint32, context interface{}) ([]uint32, error
 	params.Source.KeyChange(params.NewPublic, index)
 	params.Source.BalanceSub(this.Fee, index)
 
-	return []uint32{params.Source.Number}, nil
+	return []uint32{params.Source.GetNumber()}, nil
 }
 
 func (this *ChangeKey) Serialize(w io.Writer) error {

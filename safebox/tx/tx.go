@@ -85,7 +85,7 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 	if source == nil {
 		return nil, fmt.Errorf("Source account %d not found", number)
 	}
-	if !source.PublicKey.Equal(publicKey) {
+	if !source.IsPublicKeyEqual(publicKey) {
 		return nil, errors.New("Source account invalid public key")
 	}
 

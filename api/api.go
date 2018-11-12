@@ -70,11 +70,11 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 		return nil, errors.New("Not found")
 	}
 	return &network.Account{
-		Account:    account.Number,
-		Balance:    account.Balance,
-		EncPubkey:  hex.EncodeToString(utils.Serialize(account.PublicKey.Serialized())),
-		NOperation: account.Operations,
-		UpdatedB:   account.UpdatedIndex,
+		Account:    account.GetNumber(),
+		Balance:    account.GetBalance(),
+		EncPubkey:  hex.EncodeToString(utils.Serialize(account.GetPublicKeySerialized())),
+		NOperation: account.GetOperationsCount(),
+		UpdatedB:   account.GetUpdatedIndex(),
 	}, nil
 }
 

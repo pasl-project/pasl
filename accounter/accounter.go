@@ -118,7 +118,7 @@ func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.I
 	defer this.lock.RUnlock()
 
 	pack := this.getPackContainingAccountUnsafe(index)
-	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).Timestamp
+	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).GetTimestamp()
 }
 
 func (this *Accounter) GetAccount(number uint32) *Account {
@@ -152,13 +152,12 @@ func (this *Accounter) AppendPack(pack *PackBase) {
 	this.appendPackUnsafe(pack)
 }
 
-func (this *Accounter) NewPack(miner *crypto.Public, timestamp uint32, difficulty *big.Int) (pack *PackBase, newIndex uint32) {
+func (this *Accounter) NewPack(miner *crypto.Public, reward uint64, timestamp uint32, difficulty *big.Int) *PackBase {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	newIndex = this.getHeightUnsafe()
 	cumulativeDifficulty := big.NewInt(0).Add(this.getCumulativeDifficultyUnsafe(), difficulty)
-	pack = NewPack(this.getHeightUnsafe(), miner, timestamp, cumulativeDifficulty)
+	pack := NewPack(this.getHeightUnsafe(), miner, reward, timestamp, cumulativeDifficulty)
 	this.appendPackUnsafe(pack)
-	return pack, newIndex
+	return pack
 }

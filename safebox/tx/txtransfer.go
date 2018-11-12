@@ -85,16 +85,16 @@ func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account
 	if source == nil {
 		return nil, fmt.Errorf("Source account %d not found", this.Source)
 	}
-	if source.Operations+1 != this.OperationId {
-		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.Number, this.OperationId, source.Operations+1)
+	if source.GetOperationsCount()+1 != this.OperationId {
+		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.GetNumber(), this.OperationId, source.GetOperationsCount()+1)
 	}
-	if source.Balance < this.Amount {
+	if source.GetBalance() < this.Amount {
 		return nil, errors.New("Insufficient balance")
 	}
-	if source.Balance-this.Amount < this.Fee {
+	if source.GetBalance()-this.Amount < this.Fee {
 		return nil, errors.New("Insufficient balance")
 	}
-	if 0xFFFFFFFFFFFFFFFF-destination.Balance < this.Amount {
+	if 0xFFFFFFFFFFFFFFFF-destination.GetBalance() < this.Amount {
 		return nil, errors.New("Uint64 overflow")
 	}
 
@@ -106,7 +106,7 @@ func (this *Transfer) Apply(index uint32, context interface{}) ([]uint32, error)
 	params.Source.BalanceSub(this.Amount+this.Fee, index)
 	params.Destination.BalanceAdd(this.Amount, index)
 
-	return []uint32{params.Source.Number, params.Destination.Number}, nil
+	return []uint32{params.Source.GetNumber(), params.Destination.GetNumber()}, nil
 }
 
 func (this *Transfer) Serialize(w io.Writer) error {

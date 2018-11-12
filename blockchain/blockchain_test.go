@@ -15,32 +15,32 @@ type EmptyStorage struct {
 	storage.Storage
 }
 
-func (this *EmptyStorage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
+func (storage *EmptyStorage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
 	return 0, nil
 }
-func (this *EmptyStorage) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte) error) error) error {
+func (storage *EmptyStorage) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte))) error {
 	return nil
 }
-func (this *EmptyStorage) Flush() error {
+func (storage *EmptyStorage) Flush() error {
 	return nil
 }
-func (this *EmptyStorage) GetBlock(index uint32) (data []byte, err error) {
+func (storage *EmptyStorage) GetBlock(index uint32) (data []byte, err error) {
 	return nil, os.ErrNotExist
 }
-func (this *EmptyStorage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
+func (storage *EmptyStorage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
 	return nil, os.ErrNotExist
 }
-func (this *EmptyStorage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+func (storage *EmptyStorage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
 	return nil, os.ErrNotExist
 }
 
 func TestPendingBlock(t *testing.T) {
-	blockchain, err := NewBlockchain(&EmptyStorage{})
+	blockchain, err := NewBlockchain(&EmptyStorage{}, nil)
 	if err != nil {
 		t.Fatal()
 	}
 
-	height, _ := blockchain.GetState()
+	height, _, _ := blockchain.GetState()
 	if blockchain.GetBlock(height) != nil {
 		t.Fatal()
 	}
@@ -54,12 +54,12 @@ func TestPendingBlock(t *testing.T) {
 }
 
 func TestDeserializeAndPow(t *testing.T) {
-	blockchain, err := NewBlockchain(&EmptyStorage{})
+	blockchain, err := NewBlockchain(&EmptyStorage{}, nil)
 	if err != nil {
 		t.Fatal()
 	}
 
-	height, _ := blockchain.GetState()
+	height, _, _ := blockchain.GetState()
 	if height != 0 {
 		t.Fatal()
 	}
@@ -77,7 +77,7 @@ func TestDeserializeAndPow(t *testing.T) {
 	if block, err := blockchain.AddBlockSerialized(&blockSerialized, nil); err != nil {
 		t.Fatal()
 	} else {
-		height, _ = blockchain.GetState()
+		height, _, _ = blockchain.GetState()
 		if height != 1 {
 			t.Fatal()
 		}

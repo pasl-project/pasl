@@ -20,12 +20,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package accounter
 
 import (
+	"io"
+
 	"github.com/pasl-project/pasl/crypto"
+	"github.com/pasl-project/pasl/utils"
 )
 
 type Account struct {
+	number          uint32
+	publicKey       crypto.Public
+	balance         uint64
+	updatedIndex    uint32
+	operations      uint32
+	operationsTotal uint32
+	timestamp       uint32
+}
+
+type accountSerialized struct {
 	Number          uint32
-	PublicKey       crypto.Public
+	PublicKey       crypto.PublicSerialized
 	Balance         uint64
 	UpdatedIndex    uint32
 	Operations      uint32
@@ -41,35 +54,105 @@ type AccountHashBuffer struct {
 	Operations   uint32
 }
 
-func (this *Account) GetHashBuffer() AccountHashBuffer {
-	return AccountHashBuffer{
-		Number:       this.Number,
-		PublicKey:    this.PublicKey,
-		Balance:      this.Balance,
-		UpdatedIndex: this.UpdatedIndex,
-		Operations:   this.Operations,
+func NewAccount(number uint32, publicKey *crypto.Public, balance uint64, updatedIndex uint32, operationsCount uint32, operationsTotal uint32) Account {
+	return Account{
+		number:          number,
+		publicKey:       *publicKey,
+		balance:         balance,
+		updatedIndex:    updatedIndex,
+		operations:      operationsCount,
+		operationsTotal: operationsTotal,
 	}
 }
 
+func (this *Account) GetHashBuffer() AccountHashBuffer {
+	return AccountHashBuffer{
+		Number:       this.number,
+		PublicKey:    this.publicKey,
+		Balance:      this.balance,
+		UpdatedIndex: this.updatedIndex,
+		Operations:   this.operations,
+	}
+}
+
+func (this *Account) GetBalance() uint64 {
+	return this.balance
+}
+
+func (this *Account) GetNumber() uint32 {
+	return this.number
+}
+
+func (this *Account) GetOperationsCount() uint32 {
+	return this.operations
+}
+
+func (this *Account) GetOperationsTotal() uint32 {
+	return this.operationsTotal
+}
+
+func (this *Account) GetPublicKeySerialized() crypto.PublicSerialized {
+	return this.publicKey.Serialized()
+}
+
 func (this *Account) GetTimestamp() uint32 {
-	return this.Timestamp
+	return this.timestamp
+}
+
+func (this *Account) GetUpdatedIndex() uint32 {
+	return this.updatedIndex
+}
+
+func (this *Account) IsPublicKeyEqual(other *crypto.Public) bool {
+	return this.publicKey.Equal(other)
 }
 
 func (this *Account) BalanceSub(amount uint64, index uint32) {
-	this.Balance = this.Balance - amount
-	this.UpdatedIndex = index
-	this.Operations = this.Operations + 1
-	this.OperationsTotal = this.OperationsTotal + 1
+	this.balance = this.balance - amount
+	this.updatedIndex = index
+	this.operations = this.operations + 1
+	this.operationsTotal = this.operationsTotal + 1
 }
 
 func (this *Account) BalanceAdd(amount uint64, index uint32) {
-	this.Balance = this.Balance + amount
-	this.UpdatedIndex = index
-	this.OperationsTotal = this.OperationsTotal + 1
+	this.balance = this.balance + amount
+	this.updatedIndex = index
+	this.operationsTotal = this.operationsTotal + 1
 }
 
 func (this *Account) KeyChange(key *crypto.Public, index uint32) {
-	this.PublicKey = *key
-	this.UpdatedIndex = index
-	this.OperationsTotal = this.OperationsTotal + 1
+	this.publicKey = *key
+	this.updatedIndex = index
+	this.operationsTotal = this.operationsTotal + 1
+}
+
+func (this *Account) Serialize(w io.Writer) error {
+	_, err := w.Write(utils.Serialize(utils.Serialize(accountSerialized{
+		Number:          this.number,
+		PublicKey:       this.publicKey.Serialized(),
+		Balance:         this.balance,
+		UpdatedIndex:    this.updatedIndex,
+		Operations:      this.operations,
+		OperationsTotal: this.operationsTotal,
+		Timestamp:       this.timestamp,
+	})))
+
+	return err
+}
+
+func (this *Account) Deserialize(r io.Reader) error {
+	var unpacked accountSerialized
+	if err := utils.Deserialize(&unpacked, r); err != nil {
+		return err
+	}
+
+	this.number = unpacked.Number
+	crypto.PublicFromSerialized(&this.publicKey, &unpacked.PublicKey)
+	this.balance = unpacked.Balance
+	this.updatedIndex = unpacked.UpdatedIndex
+	this.operations = unpacked.Operations
+	this.operationsTotal = unpacked.OperationsTotal
+	this.timestamp = unpacked.Timestamp
+
+	return nil
 }

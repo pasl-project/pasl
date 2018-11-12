@@ -58,21 +58,22 @@ func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty 
 	}
 }
 
-func NewPack(index uint32, miner *crypto.Public, timestamp uint32, cumulativeDifficulty *big.Int) *PackBase {
+func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32, cumulativeDifficulty *big.Int) *PackBase {
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i, _ := range accounts {
 		accounts[i] = Account{
-			Number:          number,
-			PublicKey:       *miner,
-			Balance:         0,
-			UpdatedIndex:    index,
-			Operations:      0,
-			OperationsTotal: 0,
-			Timestamp:       timestamp,
+			number:          number,
+			publicKey:       *miner,
+			balance:         0,
+			updatedIndex:    index,
+			operations:      0,
+			operationsTotal: 0,
+			timestamp:       timestamp,
 		}
 		number++
 	}
+	accounts[0].balance = reward
 
 	return NewPackWithAccounts(index, accounts, cumulativeDifficulty)
 }
@@ -81,11 +82,11 @@ func (this *PackBase) ToBlob() []byte {
 	buf := bytes.NewBuffer([]byte(""))
 	binary.Write(buf, binary.LittleEndian, this.index)
 	for _, it := range this.accounts {
-		binary.Write(buf, binary.LittleEndian, it.Number)
-		binary.Write(buf, binary.LittleEndian, utils.Serialize(&it.PublicKey))
-		binary.Write(buf, binary.LittleEndian, it.Balance)
-		binary.Write(buf, binary.LittleEndian, it.UpdatedIndex)
-		binary.Write(buf, binary.LittleEndian, it.Operations)
+		binary.Write(buf, binary.LittleEndian, it.number)
+		binary.Write(buf, binary.LittleEndian, utils.Serialize(&it.publicKey))
+		binary.Write(buf, binary.LittleEndian, it.balance)
+		binary.Write(buf, binary.LittleEndian, it.updatedIndex)
+		binary.Write(buf, binary.LittleEndian, it.operations)
 	}
 	binary.Write(buf, binary.LittleEndian, this.accounts[0].GetTimestamp())
 	return buf.Bytes()

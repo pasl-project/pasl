@@ -45,7 +45,7 @@ const (
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
 	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
-	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte) error) error) error
+	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte))) error
 	GetBlock(index uint32) (data []byte, err error)
 	Flush() error
 	GetTx(txRipemd160Hash [20]byte) (data []byte, err error)
@@ -179,7 +179,7 @@ func (this *StorageBoltDb) LoadBlocks(toHeight *uint32, callback func(index uint
 	})
 }
 
-func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(number uint32, data []byte) error) error) error {
+func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(number uint32, data []byte))) error {
 	flush := false
 
 	func() {
@@ -199,10 +199,9 @@ func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRip
 			binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
 			this.accountTxesCache[&numberAndId] = &txRipemd160Hash
 		})
-		affectedPacks(func(index uint32, data []byte) (err error) {
+		affectedPacks(func(index uint32, data []byte) {
 			this.packsCache[index] = make([]byte, len(data))
 			copy(this.packsCache[index], data)
-			return
 		})
 
 		flush = len(this.blocksCache) > blocksCacheLimit

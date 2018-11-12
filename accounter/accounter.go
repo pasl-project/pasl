@@ -118,7 +118,7 @@ func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.I
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	pack := this.getPackContainingAccountUnsafe(index)
+	pack := this.packs[index]
 	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).GetTimestamp()
 }
 

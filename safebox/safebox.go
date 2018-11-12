@@ -198,7 +198,11 @@ func (this *Safebox) GetHashrate(blockIndex, blocksCount uint32) uint64 {
 	difficulty, timestamp := this.accounter.GetCumulativeDifficultyAndTimestamp(blockIndex)
 	prevDifficulty, prevTimestamp := this.accounter.GetCumulativeDifficultyAndTimestamp(blockIndex - utils.MinUint32(blockIndex, blocksCount))
 	difficulty.Sub(difficulty, prevDifficulty)
-	difficulty.Div(difficulty, big.NewInt(int64(timestamp-prevTimestamp)))
+	elapsed := int64(timestamp - prevTimestamp)
+	if elapsed == 0 {
+		return 0
+	}
+	difficulty.Div(difficulty, big.NewInt(elapsed))
 	return difficulty.Uint64()
 }
 

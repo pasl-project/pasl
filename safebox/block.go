@@ -102,7 +102,7 @@ type blockHashBuffer struct {
 
 func GetOperationsHash(operations []tx.Tx) [32]byte {
 	hash := sha256.Sum256([]byte(""))
-	for index, _ := range operations {
+	for index := range operations {
 		h := sha256.New()
 		operations[index].SerializeUnderlying(h)
 		hash = sha256.Sum256(h.Sum(hash[:]))
@@ -111,10 +111,10 @@ func GetOperationsHash(operations []tx.Tx) [32]byte {
 }
 
 func NewBlock(meta *BlockMetadata) (BlockBase, error) {
-	var fee uint64 = 0
+	fee := uint64(0)
 	operations := make([]tx.Tx, len(meta.Operations))
 
-	for index, _ := range meta.Operations {
+	for index := range meta.Operations {
 		operations[index] = meta.Operations[index]
 		fee += operations[index].GetFee()
 	}
@@ -145,7 +145,7 @@ func NewBlock(meta *BlockMetadata) (BlockBase, error) {
 }
 
 func (block *Block) GetAccountsSerialized() []accounter.AccountHashBuffer {
-	var result []accounter.AccountHashBuffer = make([]accounter.AccountHashBuffer, len(block.Accounts))
+	result := make([]accounter.AccountHashBuffer, len(block.Accounts))
 	for i := 0; i < len(result); i++ {
 		result[i] = block.Accounts[i].GetHashBuffer()
 	}

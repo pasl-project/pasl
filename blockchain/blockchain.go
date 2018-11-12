@@ -192,8 +192,8 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 				}
 			},
 			func(fn func(number uint32, data []byte)) {
-				for _, pack := range updatedPacks {
-					fn(pack.GetIndex(), utils.Serialize(pack))
+				for _, packIndex := range updatedPacks {
+					fn(packIndex, newSafebox.GetAccountPackSerialized(packIndex))
 				}
 			})
 		if err != nil {

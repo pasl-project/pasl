@@ -41,8 +41,6 @@ type Transfer struct {
 }
 
 type transferContext struct {
-	Source      *accounter.Account
-	Destination *accounter.Account
 }
 
 type transferToSign struct {
@@ -98,15 +96,14 @@ func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account
 		return nil, errors.New("Uint64 overflow")
 	}
 
-	return &transferContext{source, destination}, nil
+	return &transferContext{}, nil
 }
 
-func (this *Transfer) Apply(index uint32, context interface{}) ([]uint32, error) {
-	params := context.(*transferContext)
-	params.Source.BalanceSub(this.Amount+this.Fee, index)
-	params.Destination.BalanceAdd(this.Amount, index)
+func (this *Transfer) Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error) {
+	accounter.BalanceSub(this.Source, this.Amount+this.Fee, index)
+	accounter.BalanceAdd(this.Destination, this.Amount, index)
 
-	return []uint32{params.Source.GetNumber(), params.Destination.GetNumber()}, nil
+	return []uint32{this.Source, this.Destination}, nil
 }
 
 func (this *Transfer) Serialize(w io.Writer) error {

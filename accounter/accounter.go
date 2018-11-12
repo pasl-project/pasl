@@ -27,6 +27,7 @@ import (
 
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
+	"github.com/pasl-project/pasl/utils"
 )
 
 type Accounter struct {
@@ -121,23 +122,36 @@ func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.I
 	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).GetTimestamp()
 }
 
-func (this *Accounter) GetAccount(number uint32) *Account {
-	this.lock.RLock()
-	defer this.lock.RUnlock()
-
+func (this *Accounter) getAccountUnsafe(number uint32) *Account {
 	offset := number % defaults.AccountsPerBlock
 	return this.getPackContainingAccountUnsafe(number).GetAccount(int(offset))
 }
 
-func (this *Accounter) MarkAccountDirty(number uint32) *PackBase {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+func (this *Accounter) GetAccount(number uint32) *Account {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
 
+	return this.getAccountUnsafe(number)
+}
+
+func (this *Accounter) GetAccountPack(number uint32) uint32 {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	return this.getPackContainingAccountUnsafe(number).GetIndex()
+}
+
+func (this *Accounter) GetAccountPackSerialized(number uint32) []byte {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	return utils.Serialize(this.getPackContainingAccountUnsafe(number))
+}
+
+func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
 	this.dirty = true
 	pack := this.getPackContainingAccountUnsafe(number)
 	pack.MarkDirty()
-
-	return pack
 }
 
 func (this *Accounter) appendPackUnsafe(pack *PackBase) {
@@ -152,12 +166,48 @@ func (this *Accounter) AppendPack(pack *PackBase) {
 	this.appendPackUnsafe(pack)
 }
 
-func (this *Accounter) NewPack(miner *crypto.Public, reward uint64, timestamp uint32, difficulty *big.Int) *PackBase {
+func (this *Accounter) NewPack(miner *crypto.Public, reward uint64, timestamp uint32, difficulty *big.Int) uint32 {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	cumulativeDifficulty := big.NewInt(0).Add(this.getCumulativeDifficultyUnsafe(), difficulty)
 	pack := NewPack(this.getHeightUnsafe(), miner, reward, timestamp, cumulativeDifficulty)
 	this.appendPackUnsafe(pack)
-	return pack
+	return pack.GetIndex()
+}
+
+func (this *Accounter) BalanceSub(number uint32, amount uint64, index uint32) {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+	defer this.markAccountDirtyUnsafe(number)
+
+	account := this.getAccountUnsafe(number)
+	account.balance = account.balance - amount
+	account.operations = account.operations + 1
+	account.operationsTotal = account.operationsTotal + 1
+	account.updatedIndex = index
+}
+
+func (this *Accounter) BalanceAdd(number uint32, amount uint64, index uint32) {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+	defer this.markAccountDirtyUnsafe(number)
+
+	account := this.getAccountUnsafe(number)
+	account.balance = account.balance + amount
+	account.updatedIndex = index
+	account.operationsTotal = account.operationsTotal + 1
+}
+
+func (this *Accounter) KeyChange(number uint32, key *crypto.Public, index uint32, fee uint64) {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+	defer this.markAccountDirtyUnsafe(number)
+
+	account := this.getAccountUnsafe(number)
+	account.balance = account.balance - fee
+	account.operations = account.operations + 1
+	account.operationsTotal = account.operationsTotal + 1
+	account.publicKey = *key
+	account.updatedIndex = index
 }

@@ -40,7 +40,6 @@ type ChangeKey struct {
 }
 
 type changeKeyContext struct {
-	Source    *accounter.Account
 	NewPublic *crypto.Public
 }
 
@@ -90,15 +89,14 @@ func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Accoun
 		return nil, err
 	}
 
-	return &changeKeyContext{source, public}, nil
+	return &changeKeyContext{public}, nil
 }
 
-func (this *ChangeKey) Apply(index uint32, context interface{}) ([]uint32, error) {
+func (this *ChangeKey) Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error) {
 	params := context.(*changeKeyContext)
-	params.Source.KeyChange(params.NewPublic, index)
-	params.Source.BalanceSub(this.Fee, index)
+	accounter.KeyChange(this.Source, params.NewPublic, index, this.Fee)
 
-	return []uint32{params.Source.GetNumber()}, nil
+	return []uint32{this.Source}, nil
 }
 
 func (this *ChangeKey) Serialize(w io.Writer) error {

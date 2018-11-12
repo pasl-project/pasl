@@ -107,25 +107,6 @@ func (this *Account) IsPublicKeyEqual(other *crypto.Public) bool {
 	return this.publicKey.Equal(other)
 }
 
-func (this *Account) BalanceSub(amount uint64, index uint32) {
-	this.balance = this.balance - amount
-	this.updatedIndex = index
-	this.operations = this.operations + 1
-	this.operationsTotal = this.operationsTotal + 1
-}
-
-func (this *Account) BalanceAdd(amount uint64, index uint32) {
-	this.balance = this.balance + amount
-	this.updatedIndex = index
-	this.operationsTotal = this.operationsTotal + 1
-}
-
-func (this *Account) KeyChange(key *crypto.Public, index uint32) {
-	this.publicKey = *key
-	this.updatedIndex = index
-	this.operationsTotal = this.operationsTotal + 1
-}
-
 func (this *Account) Serialize(w io.Writer) error {
 	_, err := w.Write(utils.Serialize(utils.Serialize(accountSerialized{
 		Number:          this.number,

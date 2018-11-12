@@ -141,11 +141,11 @@ func (this *Accounter) GetAccountPack(number uint32) uint32 {
 	return this.getPackContainingAccountUnsafe(number).GetIndex()
 }
 
-func (this *Accounter) GetAccountPackSerialized(number uint32) []byte {
+func (this *Accounter) GetAccountPackSerialized(index uint32) []byte {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return utils.Serialize(this.getPackContainingAccountUnsafe(number))
+	return utils.Serialize(this.packs[index])
 }
 
 func (this *Accounter) markAccountDirtyUnsafe(number uint32) {

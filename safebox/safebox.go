@@ -228,9 +228,9 @@ func getReward(index uint32) uint64 {
 	return utils.MaxUint64(reward, defaults.MinReward)
 }
 
-func (this *Safebox) GetAccountPackSerialized(number uint32) []byte {
+func (this *Safebox) GetAccountPackSerialized(index uint32) []byte {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return this.accounter.GetAccountPackSerialized(number)
+	return this.accounter.GetAccountPackSerialized(index)
 }

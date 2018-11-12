@@ -78,6 +78,9 @@ func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Accoun
 	if source == nil {
 		return nil, fmt.Errorf("Source account %d not found", this.Source)
 	}
+	if source.Operations+1 != this.OperationId {
+		return nil, fmt.Errorf("Invalid source account %d operation index %d != %d expected", source.Number, this.OperationId, source.Operations+1)
+	}
 	if source.Balance < this.Fee {
 		return nil, errors.New("Insufficient balance")
 	}

@@ -57,7 +57,7 @@ func exportSafebox(ctx *cli.Context) error {
 var heightFlagValue uint
 var heightFlag cli.UintFlag = cli.UintFlag{
 	Name:        "height",
-	Usage:       "Export safebox at specific height",
+	Usage:       "Rescan blockchain and recover safebox at specific height",
 	Destination: &heightFlagValue,
 }
 var exportCommand cli.Command = cli.Command{
@@ -211,8 +211,9 @@ func main() {
 		getCommand,
 	}
 	app.Flags = []cli.Flag{
-		p2pPortFlag,
 		dataDirFlag,
+		heightFlag,
+		p2pPortFlag,
 	}
 	app.CommandNotFound = func(c *cli.Context, command string) {
 		cli.ShowAppHelp(c)

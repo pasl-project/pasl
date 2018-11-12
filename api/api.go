@@ -47,7 +47,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 	return &network.Block{
 		Block:       blockMeta.GetIndex(),
 		EncPubkey:   hex.EncodeToString(utils.Serialize(blockMeta.GetMiner().Serialized())),
-		Fee:         fee,
+		Fee:         float64(fee) / 10000,
 		Hashratekhs: this.blockchain.GetHashrate(blockMeta.GetIndex(), 50) / 1000,
 		Maturation:  utils.MaxUint32(height, blockMeta.GetIndex()+1) - blockMeta.GetIndex() - 1,
 		Nonce:       blockMeta.GetNonce(),
@@ -55,7 +55,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 		Oph:         hex.EncodeToString(blockMeta.GetOperationsHash()),
 		Payload:     hex.EncodeToString(blockMeta.GetPayload()),
 		Pow:         hex.EncodeToString(this.blockchain.GetBlockPow(blockMeta)),
-		Reward:      blockMeta.GetReward(),
+		Reward:      float64(blockMeta.GetReward()) / 10000,
 		Sbh:         hex.EncodeToString(blockMeta.GetPrevSafeBoxHash()),
 		Target:      blockMeta.GetTarget().GetCompact(),
 		Timestamp:   blockMeta.GetTimestamp(),
@@ -81,10 +81,10 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 func txToNetwork(tx *tx.Tx) network.Operation {
 	return network.Operation{
 		Account:        tx.GetAccount(),
-		Amount:         tx.GetAmount(),
+		Amount:         float64(tx.GetAmount()) / 10000,
 		Block:          0,
 		Dest_account:   tx.GetDestAccount(),
-		Fee:            tx.GetFee(),
+		Fee:            float64(tx.GetFee()) / 10000,
 		Opblock:        0, // TODO: consider to drop the field
 		Ophash:         tx.GetTxIdString(),
 		Optxt:          "", // TODO: consider to drop the field

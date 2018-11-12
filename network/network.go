@@ -21,6 +21,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -39,20 +40,20 @@ type Config struct {
 }
 
 type Node interface {
-	AddPeer(network, address string) bool
-	GetPeersByNetwork(network string) map[string]*Peer
+	AddPeer(network, address string) error
+	AddPeerSerialized(network string, serialized []byte) error
+	GetPeersByNetwork(network string) map[string]Peer
 }
 
 type Peer struct {
 	Address              string
 	LastConnectTimestamp uint32
 	ReconnectPenalty     uint32
-	Attempts             int
-	Errors               int
+	LastSeen             uint64
 }
 
 type Manager interface {
-	OnOpen(address string, transport io.WriteCloser, isOutgoing bool) (interface{}, error)
+	OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error)
 	OnData(interface{}, []byte) error
 	OnClose(interface{})
 }
@@ -98,7 +99,7 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 			go func(conn net.Conn) {
 				defer wg.Done()
 
-				node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), false)
+				node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), false, nil)
 			}(conn)
 		}
 	})
@@ -131,7 +132,7 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 						return
 					}
 
-					node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), true)
+					node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), true, func() { peer.LastSeen = uint64(time.Now().Unix()) })
 				}(peer)
 			}
 		}
@@ -141,20 +142,28 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 	return fn(&node)
 }
 
-func (node *nodeInternal) GetPeersByNetwork(network string) map[string]*Peer {
-	return make(map[string]*Peer)
+func (node *nodeInternal) GetPeersByNetwork(network string) map[string]Peer {
+	return node.Peers.GetAllSeen()
 }
 
-func (node *nodeInternal) AddPeer(network, address string) bool {
+func (node *nodeInternal) AddPeer(network, address string) error {
+	if network != "tcp" {
+		return fmt.Errorf("Unsupported network '%v'", network)
+	}
 	host := strings.Split(address, ":")[0]
 	if ip := net.ParseIP(host); ip != nil && !ip.IsGlobalUnicast() {
-		return false
+		return fmt.Errorf("IP addresss didn't pass the validation")
 	}
-	return node.Peers.Add(address)
+	node.Peers.Add(address, nil)
+	return nil
 }
 
-func (node *nodeInternal) HandleConnection(ctx context.Context, conn net.Conn, address string, isOutgoing bool) {
-	link, err := node.Manager.OnOpen(address, conn, isOutgoing)
+func (node *nodeInternal) AddPeerSerialized(network string, serialized []byte) error {
+	return node.Peers.AddSerialized(serialized)
+}
+
+func (node *nodeInternal) HandleConnection(ctx context.Context, conn net.Conn, address string, isOutgoing bool, onStateUpdated func()) {
+	link, err := node.Manager.OnOpen(address, conn, isOutgoing, onStateUpdated)
 	if err != nil {
 		utils.Tracef("OnOpen failed: %v", err)
 		return

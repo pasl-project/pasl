@@ -40,12 +40,15 @@ const (
 	tableBlock     = "block"
 	tableTx        = "tx"
 	tableAccountTx = "accountTx"
+	tablePeers     = "peers"
 )
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
 	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
 	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte))) error
+	StorePeers(peers func(func(address []byte, data []byte))) error
+	LoadPeers(peers func(address []byte, data []byte)) error
 	GetBlock(index uint32) (data []byte, err error)
 	Flush() error
 	GetTx(txRipemd160Hash [20]byte) (data []byte, err error)
@@ -284,6 +287,40 @@ func (this *StorageBoltDb) Flush() error {
 	}
 
 	return err
+}
+
+func (this *StorageBoltDb) StorePeers(peers func(func(address []byte, data []byte))) error {
+	return this.db.Update(func(tx *bolt.Tx) (err error) {
+		var bucket *bolt.Bucket
+		if bucket, err = tx.CreateBucketIfNotExists([]byte(tablePeers)); err != nil {
+			return fmt.Errorf("Failed to create/open %s table", tablePeers)
+		}
+
+		peers(func(address []byte, data []byte) {
+			if err != nil {
+				return
+			}
+			err = bucket.Put(address, data)
+		})
+
+		return err
+	})
+}
+
+func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) error {
+	return this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tablePeers)); bucket == nil {
+			return nil
+		}
+
+		c := bucket.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			peers(k, v)
+		}
+		return nil
+	})
 }
 
 func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {

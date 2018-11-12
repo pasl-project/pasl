@@ -47,7 +47,7 @@ func exportMain(ctx *cli.Context) error {
 }
 
 func exportSafebox(ctx *cli.Context) error {
-	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain) error {
+	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain, _ storage.Storage) error {
 		blob := blockchain.ExportSafebox()
 		fmt.Fprint(ctx.App.Writer, hex.EncodeToString(blob))
 		return nil
@@ -55,12 +55,12 @@ func exportSafebox(ctx *cli.Context) error {
 }
 
 var heightFlagValue uint
-var heightFlag cli.UintFlag = cli.UintFlag{
+var heightFlag = cli.UintFlag{
 	Name:        "height",
 	Usage:       "Rescan blockchain and recover safebox at specific height",
 	Destination: &heightFlagValue,
 }
-var exportCommand cli.Command = cli.Command{
+var exportCommand = cli.Command{
 	Action:      exportMain,
 	Name:        "export",
 	Usage:       "Export blockchain data",
@@ -83,14 +83,14 @@ func getMain(ctx *cli.Context) error {
 }
 
 func getHeight(ctx *cli.Context) error {
-	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain) error {
+	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain, _ storage.Storage) error {
 		height, _, _ := blockchain.GetState()
 		fmt.Fprintf(ctx.App.Writer, "%d\n", height)
 		return nil
 	})
 }
 
-var getCommand cli.Command = cli.Command{
+var getCommand = cli.Command{
 	Action:      getMain,
 	Name:        "get",
 	Usage:       "Get blockchain info",
@@ -105,17 +105,17 @@ var getCommand cli.Command = cli.Command{
 	},
 }
 
-var p2pPortFlag cli.UintFlag = cli.UintFlag{
+var p2pPortFlag = cli.UintFlag{
 	Name:  "p2p-bind-port",
 	Usage: "P2P bind port",
 	Value: uint(defaults.P2PPort),
 }
-var dataDirFlag cli.StringFlag = cli.StringFlag{
+var dataDirFlag = cli.StringFlag{
 	Name:  "data-dir",
 	Usage: "Directory to store blockchain files",
 }
 
-func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain) error) error {
+func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain, storage storage.Storage) error) error {
 	dataDir := ctx.GlobalString(dataDirFlag.GetName())
 	if dataDir == "" {
 		var err error
@@ -140,7 +140,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain)
 		if err != nil {
 			return err
 		}
-		return fn(blockchainInstance)
+		return fn(blockchainInstance, storage)
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to initialize storage. %v", err)
@@ -151,7 +151,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain)
 func run(cliContext *cli.Context) error {
 	utils.Ftracef(cliContext.App.Writer, defaults.UserAgent)
 
-	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain) error {
+	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain, storage storage.Storage) error {
 		height, safeboxHash, cumulativeDifficulty := blockchain.GetState()
 		utils.Ftracef(cliContext.App.Writer, "Blockchain loaded, height %d safeboxHash %s cumulativeDifficulty %s", height, hex.EncodeToString(safeboxHash), cumulativeDifficulty.String())
 
@@ -171,9 +171,24 @@ func run(cliContext *cli.Context) error {
 		peerUpdates := make(chan pasl.PeerInfo)
 		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
 			return network.WithNode(config, manager, func(node network.Node) error {
+				storage.LoadPeers(func(address []byte, data []byte) {
+					if err = node.AddPeerSerialized("tcp", data); err != nil {
+						utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
+					}
+				})
 				for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-					node.AddPeer("tcp", hostPort)
+					if err = node.AddPeer("tcp", hostPort); err != nil {
+						utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
+					}
 				}
+				defer func() {
+					peers := node.GetPeersByNetwork("tcp")
+					storage.StorePeers(func(fn func(address []byte, data []byte)) {
+						for address := range peers {
+							fn([]byte(address), utils.Serialize(peers[address]))
+						}
+					})
+				}()
 
 				updatesListener := concurrent.NewUnboundedExecutor()
 				updatesListener.Go(func(ctx context.Context) {

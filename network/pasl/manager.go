@@ -121,6 +121,9 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			case conn := <-manager.onStateUpdate:
 				connHeight, _ := conn.GetState()
 				manager.initializedConnections.Store(conn, connHeight)
+				if conn.onStateUpdated != nil {
+					conn.onStateUpdated()
+				}
 				signalSync()
 			case <-ctx.Done():
 				return
@@ -199,7 +202,7 @@ func (this *manager) forEachConnection(fn func(*PascalConnection), except *Pasca
 	})
 }
 
-func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool) (interface{}, error) {
+func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error) {
 	conn := &PascalConnection{
 		underlying:     NewProtocol(transport, this.timeoutRequest),
 		logPrefix:      address,
@@ -210,6 +213,7 @@ func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing
 		onNewOperation: this.onNewOperation,
 		closed:         this.closed,
 		onNewBlock:     this.onNewBlock,
+		onStateUpdated: onStateUpdated,
 	}
 
 	if err := conn.OnOpen(isOutgoing); err != nil {

@@ -50,6 +50,7 @@ type PascalConnection struct {
 	state          *pascalConnectionState
 	stateLock      sync.RWMutex
 	closed         chan *PascalConnection
+	onStateUpdated func()
 }
 
 func (this *PascalConnection) OnOpen(isOutgoing bool) error {

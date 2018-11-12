@@ -20,6 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package network
 
 import (
+	"bytes"
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,7 +43,7 @@ func NewPeersList() *PeersList {
 	}
 }
 
-func (this *PeersList) Add(address string) bool {
+func (this *PeersList) Add(address string, peer *Peer) bool {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
 
@@ -52,14 +54,26 @@ func (this *PeersList) Add(address string) bool {
 		return false
 	}
 
-	this.Queued.Set(address, &Peer{
-		Address:              address,
-		LastConnectTimestamp: 0,
-		Attempts:             0,
-		Errors:               0,
-	})
+	if peer == nil {
+		peer = &Peer{
+			Address:              address,
+			LastConnectTimestamp: 0,
+			LastSeen:             0,
+		}
+	}
+	this.Queued.Set(address, peer)
 
 	return true
+}
+
+func (this *PeersList) AddSerialized(serialized []byte) error {
+	peer := Peer{}
+	if err := utils.Deserialize(&peer, bytes.NewBuffer(serialized)); err != nil {
+		return fmt.Errorf("Failed to deserialize peer %v", peer.Address)
+	}
+
+	this.Add(peer.Address, &peer)
+	return nil
 }
 
 func (this *PeersList) ScheduleReconnect(maxActive int) []*Peer {
@@ -101,4 +115,26 @@ func (this *PeersList) SetDisconnected(peer *Peer) {
 	defer this.Lock.Unlock()
 	delete(this.Connected, peer.Address)
 	this.Queued.Set(peer.Address, peer)
+}
+
+func (this *PeersList) GetAllSeen() map[string]Peer {
+	this.Lock.RLock()
+	defer this.Lock.RUnlock()
+
+	result := make(map[string]Peer)
+	for _, peer := range this.Connected {
+		if peer.LastSeen > 0 {
+			result[peer.Address] = *peer
+		}
+	}
+	iter := this.Queued.IterFunc()
+	for kv, ok := iter(); ok; kv, ok = iter() {
+		address := kv.Key.(string)
+		peer := kv.Value.(*Peer)
+		if peer.LastSeen > 0 {
+			result[address] = *peer
+		}
+	}
+
+	return result
 }

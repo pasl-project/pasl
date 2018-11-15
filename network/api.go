@@ -24,11 +24,11 @@ type Block struct {
 }
 
 type Account struct {
-	Account    uint32 `json:"account"`
-	Balance    uint64 `json:"balance"`
-	EncPubkey  string `json:"enc_pubkey"`
-	NOperation uint32 `json:"n_operation"`
-	UpdatedB   uint32 `json:"updated_b"`
+	Account    uint32  `json:"account"`
+	Balance    float64 `json:"balance"`
+	EncPubkey  string  `json:"enc_pubkey"`
+	NOperation uint32  `json:"n_operation"`
+	UpdatedB   uint32  `json:"updated_b"`
 }
 
 type Operation struct {
@@ -39,7 +39,7 @@ type Operation struct {
 	Fee            float64 `json:"fee"`
 	Opblock        uint32  `json:"opblock"`
 	Ophash         string  `json:"ophash"`
-	Optxt          string  `json:"optxt"`
+	Optxt          *string `json:"optxt"`
 	Optype         uint8   `json:"optype"`
 	Payload        string  `json:"payload"`
 	Sender_account uint32  `json:"sender_account"`

@@ -71,7 +71,7 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 	}
 	return &network.Account{
 		Account:    account.GetNumber(),
-		Balance:    account.GetBalance(),
+		Balance:    float64(account.GetBalance()) / 10000,
 		EncPubkey:  hex.EncodeToString(utils.Serialize(account.GetPublicKeySerialized())),
 		NOperation: account.GetOperationsCount(),
 		UpdatedB:   account.GetUpdatedIndex(),
@@ -81,13 +81,13 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 func txToNetwork(tx *tx.Tx) network.Operation {
 	return network.Operation{
 		Account:        tx.GetAccount(),
-		Amount:         float64(tx.GetAmount()) / 10000,
+		Amount:         float64(tx.GetAmount()) / -10000,
 		Block:          0,
 		Dest_account:   tx.GetDestAccount(),
 		Fee:            float64(tx.GetFee()) / 10000,
 		Opblock:        0, // TODO: consider to drop the field
 		Ophash:         tx.GetTxIdString(),
-		Optxt:          "", // TODO: consider to drop the field
+		Optxt:          nil,
 		Optype:         uint8(tx.Type),
 		Payload:        hex.EncodeToString(tx.GetPayload()),
 		Sender_account: tx.GetAccount(),

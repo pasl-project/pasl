@@ -114,6 +114,10 @@ var dataDirFlag = cli.StringFlag{
 	Name:  "data-dir",
 	Usage: "Directory to store blockchain files",
 }
+var exclusiveNodesFlag = cli.StringFlag{
+	Name:  "exclusive-nodes",
+	Usage: "Comma-separated ip:port list of exclusive nodes to connect to",
+}
 
 func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain, storage storage.Storage) error) error {
 	dataDir := ctx.GlobalString(dataDirFlag.GetName())
@@ -171,38 +175,47 @@ func run(cliContext *cli.Context) error {
 		peerUpdates := make(chan pasl.PeerInfo)
 		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
 			return network.WithNode(config, manager, func(node network.Node) error {
-				storage.LoadPeers(func(address []byte, data []byte) {
-					if err = node.AddPeerSerialized("tcp", data); err != nil {
-						utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
+
+				if cliContext.IsSet(exclusiveNodesFlag.GetName()) {
+					for _, hostPort := range strings.Split(cliContext.String(exclusiveNodesFlag.GetName()), ",") {
+						if err = node.AddPeer("tcp", hostPort); err != nil {
+							utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
+						}
 					}
-				})
-				for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-					if err = node.AddPeer("tcp", hostPort); err != nil {
-						utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
-					}
-				}
-				defer func() {
-					peers := node.GetPeersByNetwork("tcp")
-					storage.StorePeers(func(fn func(address []byte, data []byte)) {
-						for address := range peers {
-							fn([]byte(address), utils.Serialize(peers[address]))
+				} else {
+					storage.LoadPeers(func(address []byte, data []byte) {
+						if err = node.AddPeerSerialized("tcp", data); err != nil {
+							utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
 						}
 					})
-				}()
-
-				updatesListener := concurrent.NewUnboundedExecutor()
-				updatesListener.Go(func(ctx context.Context) {
-					for {
-						select {
-						case peer := <-peerUpdates:
-							//utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
-							node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
-						case <-ctx.Done():
-							return
+					for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
+						if err = node.AddPeer("tcp", hostPort); err != nil {
+							utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
 						}
 					}
-				})
-				defer updatesListener.StopAndWaitForever()
+					defer func() {
+						peers := node.GetPeersByNetwork("tcp")
+						storage.StorePeers(func(fn func(address []byte, data []byte)) {
+							for address := range peers {
+								fn([]byte(address), utils.Serialize(peers[address]))
+							}
+						})
+					}()
+
+					updatesListener := concurrent.NewUnboundedExecutor()
+					updatesListener.Go(func(ctx context.Context) {
+						for {
+							select {
+							case peer := <-peerUpdates:
+								//utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
+								node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
+							case <-ctx.Done():
+								return
+							}
+						}
+					})
+					defer updatesListener.StopAndWaitForever()
+				}
 
 				return network.WithRpcServer(fmt.Sprintf("%s:%d", defaults.RPCBindAddress, defaults.RPCPort), api.NewApi(blockchain), func() error {
 					c := make(chan os.Signal, 2)
@@ -227,6 +240,7 @@ func main() {
 	}
 	app.Flags = []cli.Flag{
 		dataDirFlag,
+		exclusiveNodesFlag,
 		heightFlag,
 		p2pPortFlag,
 	}

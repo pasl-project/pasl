@@ -117,7 +117,7 @@ func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
 	return nil
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, []uint32, map[*accounter.Account]*tx.Tx, error) {
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]uint32, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -132,7 +132,8 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		reward += operations[index].GetFee()
 	}
 	newPack := newSafebox.accounter.NewPack(miner, reward, timestamp, difficulty)
-	updatedPacks := []uint32{newPack}
+	updatedPacks := make(map[uint32]struct{})
+	updatedPacks[newPack] = struct{}{}
 
 	currentHeight, _, _ := this.getStateUnsafe()
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
@@ -147,7 +148,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		return nil, nil, nil, err
 	}
 
-	affectedByTxes := make(map[*accounter.Account]*tx.Tx)
+	affectedByTxes := make(map[*accounter.Account]uint32)
 	for index := range operations {
 		context, err := operations[index].Validate(getMaturedAccountUnsafe)
 		if err != nil {
@@ -160,8 +161,8 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		for _, number := range accountsAffected {
 			pack := this.accounter.GetAccountPack(number)
 			account := this.accounter.GetAccount(number)
-			affectedByTxes[account] = &operations[index]
-			updatedPacks = append(updatedPacks, pack)
+			affectedByTxes[account] = uint32(index)
+			updatedPacks[pack] = struct{}{}
 		}
 	}
 

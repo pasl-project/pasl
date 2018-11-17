@@ -99,9 +99,9 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		for {
 			select {
 			case event := <-manager.onNewBlock:
-				if _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, nil); err != nil {
+				if _, _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, false); err != nil {
 					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
-					if event.shouldBroadcast {
+				} else if event.shouldBroadcast {
 						manager.forEachConnection(func(conn *PascalConnection) {
 							conn.BroadcastBlock(&event.SerializedBlock)
 						}, event.source)
@@ -179,15 +179,20 @@ func (this *manager) sync() bool {
 
 	to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
 	blocks := conn.BlocksGet(nodeHeight, to)
+		packsToFlush := make(map[uint32]struct{})
 	for _, block := range blocks {
-		var parentNotFound bool
-		if _, err := this.blockchain.AddBlockSerialized(&block, &parentNotFound); err != nil {
-			if parentNotFound {
+				if _, updatedPacks, err := this.blockchain.AddBlockSerialized(&block, true); err == nil {
+					for packIndex := range updatedPacks {
+						packsToFlush[packIndex] = struct{}{}
+					}
+				} else if err == blockchain.ErrParentNotFound {
 				utils.Tracef("[P2P %s] Possible chain split at block #%d %v", conn.logPrefix, block.Header.Index, err)
 			} else {
 				utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
 			}
 		}
+			if err := this.blockchain.FlushPacks(packsToFlush); err != nil {
+				utils.Tracef("Failed to flush packs %v", err)
 	}
 
 	return true

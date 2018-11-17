@@ -132,7 +132,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 		return fmt.Errorf("Failed to create data directory %v", err)
 	}
 	dbFileName := filepath.Join(dataDir, "storage.db")
-	err := storage.WithStorage(&dbFileName, defaults.AccountsPerBlock, func(storage storage.Storage) (err error) {
+	err := storage.WithStorage(&dbFileName, func(storage storage.Storage) (err error) {
 		var blockchainInstance *blockchain.Blockchain
 		if ctx.IsSet(heightFlag.GetName()) {
 			var height uint32
@@ -155,7 +155,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 func run(cliContext *cli.Context) error {
 	utils.Ftracef(cliContext.App.Writer, defaults.UserAgent)
 
-	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain, storage storage.Storage) error {
+	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain, s storage.Storage) error {
 		height, safeboxHash, cumulativeDifficulty := blockchain.GetState()
 		utils.Ftracef(cliContext.App.Writer, "Blockchain loaded, height %d safeboxHash %s cumulativeDifficulty %s", height, hex.EncodeToString(safeboxHash), cumulativeDifficulty.String())
 
@@ -183,7 +183,7 @@ func run(cliContext *cli.Context) error {
 						}
 					}
 				} else {
-					storage.LoadPeers(func(address []byte, data []byte) {
+					s.LoadPeers(func(address []byte, data []byte) {
 						if err = node.AddPeerSerialized("tcp", data); err != nil {
 							utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
 						}
@@ -195,10 +195,12 @@ func run(cliContext *cli.Context) error {
 					}
 					defer func() {
 						peers := node.GetPeersByNetwork("tcp")
-						storage.StorePeers(func(fn func(address []byte, data []byte)) {
+						s.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
+							return s.StorePeers(ctx, func(fn func(address []byte, data []byte)) {
 							for address := range peers {
 								fn([]byte(address), utils.Serialize(peers[address]))
 							}
+						})
 						})
 					}()
 

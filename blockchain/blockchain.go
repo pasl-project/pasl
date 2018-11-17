@@ -39,6 +39,10 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
+var (
+	ErrParentNotFound = errors.New("Parent block not found")
+)
+
 type Blockchain struct {
 	txPool  sync.Map
 	storage storage.Storage
@@ -47,13 +51,17 @@ type Blockchain struct {
 	target  common.TargetBase
 }
 
-func NewBlockchain(storage storage.Storage, height *uint32) (*Blockchain, error) {
+func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 	accounter := accounter.NewAccounter()
 	var topBlock *safebox.BlockMetadata
 	var err error
 
+	restore := false
 	if height == nil {
-		if topBlock, err = load(storage, accounter); err != nil {
+		if topBlock, err = load(s, accounter); err == storage.ErrSafeboxInconsistent {
+			utils.Tracef("Restoring blockchain, will take a while")
+			restore = true
+		} else if err != nil {
 			utils.Tracef("Error loading blockchain: %s", err.Error())
 			return nil, err
 		}
@@ -70,24 +78,31 @@ func NewBlockchain(storage storage.Storage, height *uint32) (*Blockchain, error)
 	target := safeboxInstance.GetFork().GetNextTarget(getPrevTarget(), safeboxInstance.GetLastTimestamps)
 
 	blockchain := &Blockchain{
-		storage: storage,
+		storage: s,
 		safebox: safeboxInstance,
 		target:  common.NewTarget(target),
 	}
 
-	if height == nil {
+	if !restore && height == nil {
 		return blockchain, nil
 	}
 
-	if err = storage.LoadBlocks(height, func(index uint32, data []byte) error {
+	packs := make(map[uint32]struct{})
+	if err = s.LoadBlocks(height, func(index uint32, data []byte) error {
 		var blockMeta safebox.BlockMetadata
 		if err := utils.Deserialize(&blockMeta, bytes.NewBuffer(data)); err != nil {
 			return err
 		}
-		_, err := blockchain.AddBlock(&blockMeta, nil, false)
+		_, updatedPacks, err := blockchain.AddBlock(&blockMeta, false, false)
+		for packIndex := range updatedPacks {
+			packs[packIndex] = struct{}{}
+		}
 		return err
 	}); err != nil {
 		return nil, err
+	}
+	if restore {
+		blockchain.FlushPacks(packs)
 	}
 
 	return blockchain, nil
@@ -107,7 +122,7 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	}
 	accounterHeight, _, _ := accounterInstance.GetState()
 	if height != accounterHeight {
-		err = errors.New("Non-consistent accounts count compared to the blockchain height")
+		err = errors.New("Accounts count is not consistent with the blockchain height")
 		return
 	}
 	if height == 0 {
@@ -127,39 +142,37 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bool, store bool) (safebox.BlockBase, error) {
+func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, store bool, syncing bool) (safebox.BlockBase, map[uint32]struct{}, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	block, err := safebox.NewBlock(meta)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// TODO: block.Header.Time, implement NAT
 	// TODO: check block hash for genesis block
 	height, safeboxHash, _ := this.safebox.GetState()
 	if height != block.GetIndex() {
-		return nil, nil
+		return nil, make(map[uint32]struct{}), nil
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
-		if parentNotFound != nil {
-			*parentNotFound = true
-		}
-		return nil, fmt.Errorf("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
+		utils.Tracef("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
+		return nil, nil, ErrParentNotFound
 	}
 
 	lastTimestamps := this.safebox.GetLastTimestamps(1)
 	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return nil, errors.New("Invalid timestamp")
+		return nil, nil, errors.New("Invalid timestamp")
 	}
 	if err := this.safebox.GetFork().CheckBlock(this.target, block); err != nil {
-		return nil, errors.New("Invalid block: " + err.Error())
+		return nil, nil, errors.New("Invalid block: " + err.Error())
 	}
 
 	newSafebox, updatedPacks, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	newHeight, _, _ := newSafebox.GetState()
@@ -169,46 +182,62 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, parentNotFound *bo
 	}
 
 	if store {
-		err = this.storage.Store(
-			block.GetIndex(),
-			utils.Serialize(meta),
-			func(txes func(txRipemd160Hash [20]byte, txData []byte)) {
-				for _, tx := range block.GetOperations() {
-					serialized := bytes.NewBuffer([]byte(""))
-					err := tx.Serialize(serialized)
-					if err != nil {
-						utils.Panicf("Failed to serailize tx")
+		err = this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
+			if err = s.StoreBlock(ctx, block.GetIndex(), utils.Serialize(meta)); err != nil {
+				return err
+			}
+
+			operations := block.GetOperations()
+			txIDBytTxIndex := make(map[uint32]uint64)
+
+			for index, _ := range operations {
+				txIndexInsideBlock := uint32(index)
+				tx := &operations[txIndexInsideBlock]
+				txRipemd160Hash := [20]byte{}
+				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+				txId, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
+				if err != nil {
+					return err
+				}
+				txMetadata := tx.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
+				if err = s.StoreTxMetadata(ctx, txId, utils.Serialize(txMetadata)); err != nil {
+					return err
+				}
+				txIDBytTxIndex[txIndexInsideBlock] = txId
+			}
+
+			for account, txIndexInsideBlock := range affectedByTx {
+				if err = s.StoreAccountOperation(ctx, account.GetNumber(), account.GetOperationsTotal(), txIDBytTxIndex[txIndexInsideBlock]); err != nil {
+					return err
+				}
+			}
+
+			if !syncing {
+				for packIndex := range updatedPacks {
+					if err = s.StoreAccountPack(ctx, packIndex, newSafebox.GetAccountPackSerialized(packIndex)); err != nil {
+						return err
 					}
-					txRipemd160Hash := [20]byte{}
-					copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-					txes(txRipemd160Hash, serialized.Bytes())
 				}
-			},
-			func(accountOperations func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)) {
-				for account, tx := range affectedByTx {
-					txRipemd160Hash := [20]byte{}
-					copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-					accountOperations(account.GetNumber(), account.GetOperationsTotal(), txRipemd160Hash)
-				}
-			},
-			func(fn func(number uint32, data []byte)) {
-				for _, packIndex := range updatedPacks {
-					fn(packIndex, newSafebox.GetAccountPackSerialized(packIndex))
-				}
-			})
+			} else {
+
+			}
+
+			return nil
+		})
+
 		if err != nil {
 			utils.Tracef("Error storing blockchain state: %v", err)
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	this.txPoolCleanUpUnsafe(block.GetOperations())
 	this.target.Set(newSafebox.GetFork().GetNextTarget(this.target, newSafebox.GetLastTimestamps))
 	this.safebox = newSafebox
-	return block, nil
+	return block, updatedPacks, nil
 }
 
-func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, parentNotFound *bool) (safebox.BlockBase, error) {
+func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, syncing bool) (safebox.BlockBase, map[uint32]struct{}, error) {
 	return this.AddBlock(&safebox.BlockMetadata{
 		Index:           block.Header.Index,
 		Miner:           block.Header.Miner,
@@ -219,7 +248,21 @@ func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, paren
 		Payload:         block.Header.Payload,
 		PrevSafeBoxHash: block.Header.PrevSafeboxHash,
 		Operations:      block.Operations,
-	}, parentNotFound, true)
+	}, true, syncing)
+}
+
+func (this *Blockchain) FlushPacks(updatedPacks map[uint32]struct{}) error {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
+	return this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
+		for packIndex := range updatedPacks {
+			if err := s.StoreAccountPack(ctx, packIndex, this.safebox.GetAccountPackSerialized(packIndex)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (this *Blockchain) AddOperation(operation *tx.Tx) (new bool, err error) {
@@ -302,13 +345,15 @@ func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
 	return this.getPendingBlock(nil, []byte(""), blockTimestamp)
 }
 
-func (this *Blockchain) GetTxPool() []tx.Tx {
-	operations := make([]tx.Tx, 0)
+func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx *tx.Tx) bool) {
+	i := uint32(0)
+	time := uint32(time.Now().Unix())
 	this.txPool.Range(func(key, value interface{}) bool {
-		operations = append(operations, value.(tx.Tx))
-		return true
+		tx := value.(tx.Tx)
+		meta := tx.GetMetadata(i, 0, time)
+		i += 1
+		return fn(&meta, &tx)
 	})
-	return operations
 }
 
 func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
@@ -378,47 +423,48 @@ func (this *Blockchain) GetAccount(number uint32) *accounter.Account {
 	return this.safebox.GetAccount(number)
 }
 
-func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) *tx.Tx {
-	serialized, err := this.storage.GetTx(txRipemd160Hash)
+func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, *tx.Tx, error) {
+	metadataSerialized, err := this.storage.GetTxMetadata(txRipemd160Hash)
 	if err != nil {
-		return nil
+		return nil, nil, err
 	}
 
-	var tx tx.Tx
-	if err := tx.Deserialize(bytes.NewBuffer(serialized)); err != nil {
-		utils.Tracef("Failed to deserialize tx")
-		return nil
-	}
-
-	return &tx
+	return tx.TxFromMetadata(metadataSerialized)
 }
 
-func (this *Blockchain) GetAccountOperations(number uint32) (txesData map[uint32]*tx.Tx) {
+func (this *Blockchain) AccountOperationsForEach(number uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx *tx.Tx) bool) error {
 	serializedTxes, err := this.storage.GetAccountTxesData(number)
 	if err != nil {
-		return nil
+		return err
 	}
 
-	result := make(map[uint32]*tx.Tx)
-	for operationId, serializedTx := range serializedTxes {
-		result[operationId] = &tx.Tx{}
-		if err := result[operationId].Deserialize(bytes.NewBuffer(serializedTx)); err != nil {
-			utils.Tracef("Failed to deserialize tx")
-			return nil
+	for operationId, _ := range serializedTxes {
+		if meta, tx, err := tx.TxFromMetadata(serializedTxes[operationId]); err != nil {
+			if !fn(operationId, meta, tx) {
+				return nil
+			}
+		} else {
+			return err
 		}
 	}
 
-	return result
+	return nil
 }
 
-func (this *Blockchain) GetBlockOperations(index uint32) (txesData []tx.Tx) {
+func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.TxMetadata, tx *tx.Tx) bool) error {
 	block := this.GetBlock(index)
 	if block == nil {
-		utils.Tracef("Failed to get block %d", index)
-		return nil
+		return fmt.Errorf("Failed to get block %d", index)
 	}
 
-	return block.GetOperations()
+	operations := block.GetOperations()
+	for index, _ := range operations {
+		meta := operations[index].GetMetadata(uint32(index), block.GetIndex(), block.GetTimestamp())
+		if !fn(&meta, &operations[index]) {
+			return nil
+		}
+	}
+	return nil
 }
 
 func (this *Blockchain) ExportSafebox() []byte {

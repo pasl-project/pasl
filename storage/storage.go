@@ -22,10 +22,9 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/pasl-project/pasl/utils"
@@ -36,36 +35,45 @@ const (
 )
 
 const (
-	tablePack      = "pack"
-	tableBlock     = "block"
-	tableTx        = "tx"
-	tableAccountTx = "accountTx"
-	tablePeers     = "peers"
+	tableAccountTx  = "accountTx"
+	tableBlock      = "block"
+	tablePack       = "pack"
+	tablePeers      = "peers"
+	tableTx         = "tx"
+	tableTxMetadata = "txMetadata"
 )
+
+var (
+	ErrSafeboxInconsistent = errors.New("Failed to load safebox")
+)
+
+type StorageWritable interface {
+	StoreBlock(context interface{}, index uint32, data []byte) error
+	StoreTxHash(context interface{}, txRipemd160Hash [20]byte, blockIndex uint32, txIndexInsideBlock uint32) (uint64, error)
+	StoreTxMetadata(context interface{}, txId uint64, txMetadata []byte) error
+	StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error
+	StoreAccountPack(context interface{}, index uint32, data []byte) error
+	StorePeers(context interface{}, peers func(func(address []byte, data []byte))) error
+}
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
 	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
-	Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(index uint32, data []byte))) error
-	StorePeers(peers func(func(address []byte, data []byte))) error
+	WithWritable(fn func(storageWritable StorageWritable, context interface{}) error) error
 	LoadPeers(peers func(address []byte, data []byte)) error
 	GetBlock(index uint32) (data []byte, err error)
-	Flush() error
-	GetTx(txRipemd160Hash [20]byte) (data []byte, err error)
+	GetTxMetadata(txRipemd160Hash [20]byte) (data []byte, err error)
 	GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error)
 }
 
 type StorageBoltDb struct {
-	db               *bolt.DB
-	accountsPerBlock uint32
-	lock             sync.RWMutex
-	blocksCache      map[uint32][]byte
-	packsCache       map[uint32][]byte
-	txesCache        map[[20]byte][]byte
-	accountTxesCache map[*[8]byte]*[20]byte
+	db *bolt.DB
+
+	Storage
+	StorageWritable
 }
 
-func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Storage) error) error {
+func WithStorage(filename *string, fn func(storage Storage) error) error {
 	_, err := os.Stat(*filename)
 	firstRun := os.IsNotExist(err)
 	db, err := bolt.Open(*filename, 0600, nil)
@@ -75,12 +83,7 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Stor
 	defer db.Close()
 
 	storage := &StorageBoltDb{
-		db:               db,
-		accountsPerBlock: accountsPerBlock,
-		blocksCache:      make(map[uint32][]byte),
-		packsCache:       make(map[uint32][]byte),
-		txesCache:        make(map[[20]byte][]byte),
-		accountTxesCache: make(map[*[8]byte]*[20]byte),
+		db: db,
 	}
 
 	if firstRun {
@@ -89,22 +92,24 @@ func WithStorage(filename *string, accountsPerBlock uint32, fn func(storage Stor
 		}
 	}
 
-	defer storage.Flush()
 	return fn(storage)
 }
 
 func (this *StorageBoltDb) createTables() error {
 	return this.db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(tablePack)); err != nil {
-			return err
-		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableAccountTx)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableBlock)); err != nil {
 			return err
 		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tablePack)); err != nil {
+			return err
+		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableTx)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableTxMetadata)); err != nil {
 			return err
 		}
 		return nil
@@ -123,6 +128,16 @@ func (this *StorageBoltDb) Load(callback func(index uint32, serialized []byte) e
 		if bucket = tx.Bucket([]byte(tablePack)); bucket == nil {
 			return fmt.Errorf("Table doesn't exist %s", tablePack)
 		}
+		packs := uint32(bucket.Stats().KeyN)
+		if packs != height {
+			utils.Tracef("Packs loaded %d, height %d", packs, height)
+			if packs < height {
+				height = packs
+			} else {
+				return ErrSafeboxInconsistent
+			}
+		}
+
 		cursor := bucket.Cursor()
 
 		var pack uint32 = 0
@@ -132,10 +147,6 @@ func (this *StorageBoltDb) Load(callback func(index uint32, serialized []byte) e
 				return err
 			}
 			pack++
-		}
-
-		if pack != height {
-			return fmt.Errorf("Failed to load account packs, loaded %d, height %d", pack, height)
 		}
 
 		return nil
@@ -171,6 +182,7 @@ func (this *StorageBoltDb) LoadBlocks(toHeight *uint32, callback func(index uint
 			if err := callback(index, value); err != nil {
 				return err
 			}
+			utils.Tracef("Loaded %d block", index)
 			total++
 		}
 
@@ -182,129 +194,114 @@ func (this *StorageBoltDb) LoadBlocks(toHeight *uint32, callback func(index uint
 	})
 }
 
-func (this *StorageBoltDb) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedPacks func(func(number uint32, data []byte))) error {
-	flush := false
-
-	func() {
-		this.lock.Lock()
-		defer this.lock.Unlock()
-
-		this.blocksCache[index] = make([]byte, len(data))
-		copy(this.blocksCache[index], data)
-
-		txes(func(txRipemd160Hash [20]byte, txData []byte) {
-			this.txesCache[txRipemd160Hash] = make([]byte, len(txData))
-			copy(this.txesCache[txRipemd160Hash], txData)
-		})
-		accountOperations(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte) {
-			numberAndId := [8]byte{}
-			binary.BigEndian.PutUint32(numberAndId[0:4], number)
-			binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
-			this.accountTxesCache[&numberAndId] = &txRipemd160Hash
-		})
-		affectedPacks(func(index uint32, data []byte) {
-			this.packsCache[index] = make([]byte, len(data))
-			copy(this.packsCache[index], data)
-		})
-
-		flush = len(this.blocksCache) > blocksCacheLimit
-	}()
-
-	if flush {
-		return this.Flush()
-	}
-
-	return nil
+func (this *StorageBoltDb) WithWritable(fn func(storageWritable StorageWritable, context interface{}) error) error {
+	return this.db.Update(func(tx *bolt.Tx) error {
+		return fn(this, tx)
+	})
 }
 
-func (this *StorageBoltDb) Flush() error {
-	err := this.db.Update(func(tx *bolt.Tx) (err error) {
-		this.lock.Lock()
-		defer this.lock.Unlock()
+func (this *StorageBoltDb) StoreBlock(context interface{}, index uint32, data []byte) error {
+	tx := context.(*bolt.Tx)
 
-		err = (func() error {
-			var bucket *bolt.Bucket
-			if bucket = tx.Bucket([]byte(tableBlock)); bucket == nil {
-				return fmt.Errorf("Table doesn't exist %s", tableBlock)
-			}
-
-			for index, data := range this.blocksCache {
-				buffer := [4]byte{}
-				binary.BigEndian.PutUint32(buffer[:], index)
-				if err = bucket.Put(buffer[:], data); err != nil {
-					return err
-				}
-			}
-
-			if bucket = tx.Bucket([]byte(tablePack)); bucket == nil {
-				return fmt.Errorf("Table doesn't exist %s", tablePack)
-			}
-
-			for number, data := range this.packsCache {
-				buffer := [4]byte{}
-				binary.BigEndian.PutUint32(buffer[:], number)
-				if err = bucket.Put(buffer[:], data); err != nil {
-					return err
-				}
-			}
-
-			if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
-				return fmt.Errorf("Table doesn't exist %s", tableTx)
-			}
-
-			for txRipemd160Hash, data := range this.txesCache {
-				txRipemd160HashCopy := txRipemd160Hash
-				if err = bucket.Put(txRipemd160HashCopy[:], data); err != nil {
-					return err
-				}
-			}
-
-			if bucket = tx.Bucket([]byte(tableAccountTx)); bucket == nil {
-				return fmt.Errorf("Table doesn't exist %s", tableAccountTx)
-			}
-
-			for accountAndId, txRipemd160Hash := range this.accountTxesCache {
-				if err = bucket.Put(accountAndId[:], txRipemd160Hash[:]); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		})()
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-
-		return nil
-	})
-
-	if err == nil {
-		this.blocksCache = make(map[uint32][]byte)
-		this.packsCache = make(map[uint32][]byte)
-		this.txesCache = make(map[[20]byte][]byte)
-		this.accountTxesCache = make(map[*[8]byte]*[20]byte)
+	var bucket *bolt.Bucket
+	tableName := tableBlock
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
 	}
+
+	buffer := [4]byte{}
+	binary.BigEndian.PutUint32(buffer[:], index)
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+	return bucket.Put(buffer[:], dataCopy)
+}
+
+func (this *StorageBoltDb) StoreTxHash(context interface{}, txRipemd160Hash [20]byte, blockIndex uint32, txIndexInsideBlock uint32) (uint64, error) {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tableTx
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return 0, fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	txID := uint64(blockIndex)*4294967296 + uint64(txIndexInsideBlock)
+	buffer := bytes.NewBuffer([]byte(""))
+	binary.Write(buffer, binary.BigEndian, txID)
+	txRipemd160HashCopy := txRipemd160Hash
+	if err := bucket.Put(txRipemd160HashCopy[:], buffer.Bytes()); err != nil {
+		return 0, err
+	}
+	return txID, nil
+}
+
+func (this *StorageBoltDb) StoreTxMetadata(context interface{}, txID uint64, txMetadata []byte) error {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tableTxMetadata
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	buffer := bytes.NewBuffer([]byte(""))
+	binary.Write(buffer, binary.BigEndian, txID)
+	txMetadataCopy := make([]byte, len(txMetadata))
+	copy(txMetadataCopy, txMetadata)
+	return bucket.Put(buffer.Bytes(), txMetadataCopy)
+}
+
+func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tableAccountTx
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	numberAndId := [8]byte{}
+	binary.BigEndian.PutUint32(numberAndId[0:4], number)
+	binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
+	txId = uint64(bucket.Stats().KeyN)
+	buffer := [8]byte{}
+	binary.BigEndian.PutUint64(buffer[:], txId)
+	return bucket.Put(numberAndId[:], buffer[:])
+}
+
+func (this *StorageBoltDb) StoreAccountPack(context interface{}, index uint32, data []byte) error {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tablePack
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+	buffer := [4]byte{}
+	binary.BigEndian.PutUint32(buffer[:], index)
+	return bucket.Put(buffer[:], data)
+}
+
+func (this *StorageBoltDb) StorePeers(context interface{}, peers func(func(address []byte, data []byte))) (err error) {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tablePeers
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	peers(func(address []byte, data []byte) {
+		if err != nil {
+			return
+		}
+		err = bucket.Put(address, data)
+	})
 
 	return err
-}
-
-func (this *StorageBoltDb) StorePeers(peers func(func(address []byte, data []byte))) error {
-	return this.db.Update(func(tx *bolt.Tx) (err error) {
-		var bucket *bolt.Bucket
-		if bucket, err = tx.CreateBucketIfNotExists([]byte(tablePeers)); err != nil {
-			return fmt.Errorf("Failed to create/open %s table", tablePeers)
-		}
-
-		peers(func(address []byte, data []byte) {
-			if err != nil {
-				return
-			}
-			err = bucket.Put(address, data)
-		})
-
-		return err
-	})
 }
 
 func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) error {
@@ -324,15 +321,6 @@ func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) er
 }
 
 func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {
-	this.lock.RLock()
-	dataBuffer := this.blocksCache[index]
-	this.lock.RUnlock()
-	if dataBuffer != nil {
-		data = make([]byte, len(dataBuffer))
-		copy(data, dataBuffer)
-		return data, nil
-	}
-
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
@@ -352,56 +340,57 @@ func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {
 	return
 }
 
-func (this *StorageBoltDb) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
-	this.lock.RLock()
-	dataBuffer := this.txesCache[txRipemd160Hash]
-	this.lock.RUnlock()
-	if dataBuffer != nil {
-		data = make([]byte, len(dataBuffer))
-		copy(data, dataBuffer)
-		return data, nil
+func (this *StorageBoltDb) getTxId(tx *bolt.Tx, txRipemd160Hash [20]byte) (uint64, error) {
+	var bucket *bolt.Bucket
+
+	tableName := tableTx
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return 0, fmt.Errorf("Table doesn't exist %s", tableName)
 	}
 
-	err = this.db.View(func(tx *bolt.Tx) error {
-		var bucket *bolt.Bucket
+	if txIdBuffer := bucket.Get(txRipemd160Hash[:]); txIdBuffer != nil {
+		return binary.BigEndian.Uint64(txIdBuffer), nil
+	}
+	return 0, fmt.Errorf("Failed to get tx id by hash %x", txRipemd160Hash)
+}
 
-		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
-			return fmt.Errorf("Table doesn't exist %s", tableTx)
+func (this *StorageBoltDb) getTxMetadata(boltTx *bolt.Tx, txId uint64) (metadata []byte, err error) {
+	var bucket *bolt.Bucket
+	tableName := tableTxMetadata
+	if bucket = boltTx.Bucket([]byte(tableName)); bucket == nil {
+		return nil, fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	txIdBuffer := [8]byte{}
+	binary.BigEndian.PutUint64(txIdBuffer[:], txId)
+
+	if metadataBuffer := bucket.Get(txIdBuffer[:]); metadataBuffer != nil {
+		metadata = make([]byte, len(metadataBuffer))
+		copy(metadata, metadataBuffer)
+		return metadata, nil
+	}
+
+	return nil, fmt.Errorf("Failed to get tx metadata by id %s", txId)
+}
+
+func (this *StorageBoltDb) GetTxMetadata(txRipemd160Hash [20]byte) (metadata []byte, err error) {
+	err = this.db.View(func(boltTx *bolt.Tx) error {
+		txId, err := this.getTxId(boltTx, txRipemd160Hash)
+		if err != nil {
+			return err
 		}
-		if dataBuffer := bucket.Get(txRipemd160Hash[:]); dataBuffer != nil {
-			data = make([]byte, len(dataBuffer))
-			copy(data, dataBuffer)
-		} else {
-			return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
+
+		if metadata, err = this.getTxMetadata(boltTx, txId); err != nil {
+			return err
 		}
+
 		return nil
 	})
 	return
 }
 
 func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
-	txHashes := make(map[uint32]*[20]byte)
-	this.lock.RLock()
-	var current uint32
-	var operationId uint32
-	for numberAndId, txRipemd160Hash := range this.accountTxesCache {
-		current = binary.BigEndian.Uint32(numberAndId[0:4])
-		operationId = binary.BigEndian.Uint32(numberAndId[4:8])
-		if current == number {
-			txHashes[operationId] = txRipemd160Hash
-		}
-	}
-	txData = make(map[uint32][]byte)
-	for operationId, txRipemd160Hash := range txHashes {
-		if dataBuffer, ok := this.txesCache[*txRipemd160Hash]; ok {
-			txData[operationId] = make([]byte, len(dataBuffer))
-			copy(txData[operationId][:], dataBuffer)
-			delete(txHashes, operationId)
-		}
-	}
-	this.lock.RUnlock()
-
-	err = this.db.View(func(tx *bolt.Tx) error {
+	return txData, this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
 		if bucket = tx.Bucket([]byte(tableAccountTx)); bucket == nil {
@@ -411,6 +400,9 @@ func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32]
 		var buf [4]byte
 		binary.BigEndian.PutUint32(buf[:], number)
 
+		txIds := make(map[uint32]uint64)
+		var current uint32
+		var operationId uint32
 		c := bucket.Cursor()
 		for k, v := c.Seek(buf[:]); k != nil; k, v = c.Next() {
 			numberAndId := bytes.NewBuffer(k)
@@ -423,29 +415,17 @@ func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32]
 			if current != number {
 				break
 			}
-			txRipemd160Hash := [20]byte{}
-			copy(txRipemd160Hash[:], v)
-			txHashes[operationId] = &txRipemd160Hash
+			txIds[operationId] = binary.BigEndian.Uint64(v)
 		}
 
-		if bucket = tx.Bucket([]byte(tableTx)); bucket == nil {
-			return fmt.Errorf("Table doesn't exist %s", tableTx)
-		}
-
-		for operationId, txRipemd160Hash := range txHashes {
-			if dataBuffer := bucket.Get(txRipemd160Hash[:]); dataBuffer != nil {
-				txData[operationId] = make([]byte, len(dataBuffer))
-				copy(txData[operationId][:], dataBuffer)
+		for operationId, txId := range txIds {
+			if metadata, err := this.getTxMetadata(tx, txId); err == nil {
+				txData[operationId] = metadata
 			} else {
-				return fmt.Errorf("Failed to get tx %s", hex.EncodeToString(txRipemd160Hash[:]))
+				return err
 			}
 		}
 
 		return nil
 	})
-
-	if err != nil {
-		utils.Panicf("Failed to fetch txes from DB %v", err)
-	}
-	return txData, err
 }

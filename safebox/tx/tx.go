@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package tx
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/hex"
 	"errors"
@@ -63,6 +64,14 @@ type commonOperation interface {
 type Tx struct {
 	Type txType
 	commonOperation
+}
+
+type TxMetadata struct {
+	BlockIndex uint32
+	Index      uint32
+	Time       uint32
+	Type       uint8
+	TxRaw      []byte
 }
 
 type OperationsNetwork struct {
@@ -147,6 +156,31 @@ func checkSignature(public *crypto.Public, data []byte, signatureSerialized *cry
 		return errors.New("Invalid signature")
 	}
 	return nil
+}
+
+func (this *Tx) GetMetadata(txIndexInsideBlock uint32, blockIndex uint32, time uint32) TxMetadata {
+	return TxMetadata{
+		BlockIndex: blockIndex,
+		Index:      txIndexInsideBlock,
+		Time:       time,
+		Type:       uint8(this.Type),
+		TxRaw:      utils.Serialize(this),
+	}
+}
+
+func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, *Tx, error) {
+	var metadata TxMetadata
+	if err := utils.Deserialize(&metadata, bytes.NewBuffer(metadataSerialized)); err != nil {
+		return nil, nil, err
+	}
+
+	var tx Tx
+	if err := tx.Deserialize(bytes.NewBuffer(metadata.TxRaw)); err != nil {
+		utils.Tracef("Failed to deserialize tx")
+		return nil, nil, err
+	}
+
+	return &metadata, &tx, nil
 }
 
 func (this *Tx) Serialize(w io.Writer) error {

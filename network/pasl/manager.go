@@ -102,10 +102,9 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 				if _, _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, false); err != nil {
 					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
 				} else if event.shouldBroadcast {
-						manager.forEachConnection(func(conn *PascalConnection) {
-							conn.BroadcastBlock(&event.SerializedBlock)
-						}, event.source)
-					}
+					manager.forEachConnection(func(conn *PascalConnection) {
+						conn.BroadcastBlock(&event.SerializedBlock)
+					}, event.source)
 				}
 			case event := <-manager.onNewOperation:
 				new, err := manager.blockchain.AddOperation(&event.Tx)
@@ -140,7 +139,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Second):
-				if !manager.sync() {
+				if !manager.sync(ctx) {
 					manager.doSync.L.Lock()
 					if !manager.doSyncValue {
 						manager.doSync.Wait()
@@ -155,47 +154,67 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 	return callback(manager)
 }
 
-func (this *manager) sync() bool {
+func (this *manager) sync(ctx context.Context) bool {
+	result := false
+
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
 	nodeHeight, _, _ := this.blockchain.GetState()
-
-	candidates := make([]*PascalConnection, 0)
-	this.initializedConnections.Range(func(conn, height interface{}) bool {
-		if height.(uint32) > nodeHeight {
-			candidates = append(candidates, conn.(*PascalConnection))
+	for {
+		select {
+		case <-ctx.Done():
+			return result
+		default:
+			break
 		}
-		return true
-	})
 
-	candidatesTotal := len(candidates)
-	if candidatesTotal == 0 {
-		return false
-	}
+		candidates := make([]*PascalConnection, 0)
+		this.initializedConnections.Range(func(conn, height interface{}) bool {
+			if height.(uint32) > nodeHeight {
+				candidates = append(candidates, conn.(*PascalConnection))
+			}
+			return true
+		})
 
-	selected := rand.Int() % candidatesTotal
-	conn := candidates[selected]
-	height, _ := conn.GetState()
-	ahead := height - nodeHeight
-	utils.Tracef("[P2P %s] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, height, ahead, ahead/288)
+		candidatesTotal := len(candidates)
+		if candidatesTotal == 0 {
+			return result
+		}
 
-	to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
-	blocks := conn.BlocksGet(nodeHeight, to)
+		selected := rand.Int() % candidatesTotal
+		conn := candidates[selected]
+		height, _ := conn.GetState()
+		ahead := height - nodeHeight
+		utils.Tracef("[P2P %s] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, height, ahead, ahead/288)
+
+		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
+		blocks := conn.BlocksGet(nodeHeight, to)
+		nodeHeight += uint32(len(blocks))
+
 		packsToFlush := make(map[uint32]struct{})
-	for _, block := range blocks {
+		wg.Wait()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, block := range blocks {
 				if _, updatedPacks, err := this.blockchain.AddBlockSerialized(&block, true); err == nil {
 					for packIndex := range updatedPacks {
 						packsToFlush[packIndex] = struct{}{}
 					}
 				} else if err == blockchain.ErrParentNotFound {
-				utils.Tracef("[P2P %s] Possible chain split at block #%d %v", conn.logPrefix, block.Header.Index, err)
-			} else {
-				utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
+					utils.Tracef("[P2P %s] Possible chain split at block #%d %v", conn.logPrefix, block.Header.Index, err)
+				} else {
+					utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
+				}
 			}
-		}
 			if err := this.blockchain.FlushPacks(packsToFlush); err != nil {
 				utils.Tracef("Failed to flush packs %v", err)
+			}
+		}()
+		result = true
 	}
 
-	return true
+	return result
 }
 
 func (this *manager) forEachConnection(fn func(*PascalConnection), except *PascalConnection) {

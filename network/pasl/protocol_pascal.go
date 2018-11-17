@@ -97,6 +97,22 @@ type requestResponse struct {
 	result    *result
 }
 
+func (r *requestResponse) GetType() string {
+	if r == nil {
+		return "cancelled"
+	}
+	switch r.typeId {
+	case request:
+		return "request"
+	case response:
+		return "response"
+	case notification:
+		return "notification"
+	default:
+		return "unknown"
+	}
+}
+
 type requestHandler func(request *requestResponse, payload []byte) ([]byte, error)
 type responseHandler func(request *requestResponse, payload []byte) error
 

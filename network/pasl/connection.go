@@ -143,7 +143,7 @@ func (this *PascalConnection) BroadcastBlock(block *safebox.SerializedBlock) {
 }
 
 func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []byte) error {
-	utils.Tracef("[P2P %s]", this.logPrefix)
+	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
 
 	if request == nil {
 		return fmt.Errorf("[P2P %s] Refused by remote side", this.logPrefix)
@@ -180,7 +180,7 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 }
 
 func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %s]", this.logPrefix)
+	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
 
 	var packet packetGetBlocksRequest
 	if err := utils.Deserialize(&packet, bytes.NewBuffer(payload)); err != nil {
@@ -227,12 +227,12 @@ func (this *PascalConnection) onErrorReport(request *requestResponse, payload []
 }
 
 func (this *PascalConnection) onMessageRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %s]", this.logPrefix)
+	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
 	return nil, nil
 }
 
 func (this *PascalConnection) onGetHeadersRequest(request *requestResponse, payload []byte) ([]byte, error) {
-	utils.Tracef("[P2P %s]", this.logPrefix)
+	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
 	return nil, nil
 }
 

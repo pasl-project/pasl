@@ -150,11 +150,18 @@ func (node *nodeInternal) AddPeer(network, address string) error {
 	if network != "tcp" {
 		return fmt.Errorf("Unsupported network '%v'", network)
 	}
+
 	host := strings.Split(address, ":")[0]
-	if ip := net.ParseIP(host); ip != nil && !ip.IsGlobalUnicast() {
-		return fmt.Errorf("IP addresss didn't pass the validation")
+	if ip := net.ParseIP(host); ip != nil {
+		if !ip.IsGlobalUnicast() {
+			return fmt.Errorf("IP Address %s didn't pass the validation", address)
+		}
+		node.Peers.Add(address, nil)
+	} else if tcp, err := net.ResolveTCPAddr("tcp", address); err == nil {
+		node.Peers.Add(tcp.String(), nil)
+	} else {
+		return fmt.Errorf("Failed to resolve TCP addresss %s %v", address, err)
 	}
-	node.Peers.Add(address, nil)
 	return nil
 }
 

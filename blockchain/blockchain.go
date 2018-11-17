@@ -40,7 +40,8 @@ import (
 )
 
 var (
-	ErrParentNotFound = errors.New("Parent block not found")
+	ErrFutureTimestamp = errors.New("Block time is too far in the future")
+	ErrParentNotFound  = errors.New("Parent block not found")
 )
 
 type Blockchain struct {
@@ -151,7 +152,10 @@ func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, store bool, syncin
 		return nil, nil, err
 	}
 
-	// TODO: block.Header.Time, implement NAT
+	if block.GetTimestamp() > uint32(time.Now().Unix())+defaults.MaxBlockTimeOffset {
+		return nil, nil, ErrFutureTimestamp
+	}
+
 	// TODO: check block hash for genesis block
 	height, safeboxHash, _ := this.safebox.GetState()
 	if height != block.GetIndex() {
@@ -286,8 +290,8 @@ func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.Tx) {
 	}
 }
 
-func (this *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte) (template []byte, reservedOffset int, reservedSize int) {
-	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload, uint32(time.Now().Unix())))
+func (this *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte, time uint32) (template []byte, reservedOffset int, reservedSize int) {
+	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload, time))
 }
 
 func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {

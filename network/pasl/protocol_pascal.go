@@ -25,6 +25,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -144,7 +145,7 @@ func (this *requestWithTimeout) Process(packet *requestResponse, payload []byte)
 type protocol struct {
 	transport       io.WriteCloser
 	timeoutRequest  time.Duration
-	requests        map[uint32]*requestWithTimeout
+	requests        sync.Map
 	requestId       uint32
 	buffer          *bytes.Buffer
 	header          packetHeader
@@ -158,16 +159,17 @@ func NewProtocol(transport io.WriteCloser, timeoutRequest time.Duration) *protoc
 		timeoutRequest:  timeoutRequest,
 		buffer:          &bytes.Buffer{},
 		knownOperations: make(map[operationId]requestHandler),
-		requests:        make(map[uint32]*requestWithTimeout),
 	}
 	return conn
 }
 
 func (this *protocol) Close() error {
-	for _, request := range this.requests {
-		request.Process(nil, nil)
-	}
-
+	this.requests.Range(func(id, handler interface{}) bool {
+		if handler != nil {
+			handler.(*requestWithTimeout).Process(nil, nil)
+		}
+		return true
+	})
 	return this.transport.Close()
 }
 
@@ -218,9 +220,9 @@ func (this *protocol) onPacket(packet *requestResponse, payload []byte) (err err
 
 func (this *protocol) processPacket(packet *requestResponse, payload []byte) (out []byte, err error) {
 	if packet.typeId == response {
-		if request, ok := this.requests[packet.id]; ok {
-			delete(this.requests, packet.id)
-			return nil, request.Process(packet, payload)
+		if request, ok := this.requests.LoadOrStore(packet.id, nil); ok && request != nil {
+			this.requests.Delete(packet.id)
+			return nil, request.(*requestWithTimeout).Process(packet, payload)
 		}
 		return nil, errors.New("Unexpected response")
 	}
@@ -249,12 +251,14 @@ func (this *protocol) sendRequest(operationId operationId, payload []byte, handl
 	}
 
 	if handler != nil {
-		this.requests[newRequestId] = NewRequest(handler, func() {
-			delete(this.requests, newRequestId)
-			if err := handler(nil, nil); err != nil {
-				this.Close()
+		this.requests.Store(newRequestId, NewRequest(handler, func() {
+			if request, ok := this.requests.LoadOrStore(newRequestId, nil); ok && request != nil {
+				this.requests.Delete(newRequestId)
+				if err := handler(nil, nil); err != nil {
+					this.Close()
+				}
 			}
-		}, this.timeoutRequest)
+		}, this.timeoutRequest))
 	}
 
 	_, err = this.transport.Write(packet)

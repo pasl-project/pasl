@@ -128,7 +128,7 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 					d := net.Dialer{Timeout: node.Config.TimeoutConnect}
 					conn, err := d.DialContext(ctx, "tcp", peer.Address)
 					if err != nil {
-						utils.Tracef("Connection failed: %v", err)
+						// utils.Tracef("Connection failed: %v", err)
 						return
 					}
 

@@ -269,7 +269,7 @@ func (this *Blockchain) FlushPacks(updatedPacks map[uint32]struct{}) error {
 	})
 }
 
-func (this *Blockchain) AddOperation(operation *tx.Tx) (new bool, err error) {
+func (this *Blockchain) TxPoolAddOperation(operation *tx.Tx) (new bool, err error) {
 	if err := this.safebox.Validate(operation); err != nil {
 		return false, err
 	}

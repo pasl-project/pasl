@@ -119,7 +119,7 @@ func (this *Api) ExecuteOperations(ctx context.Context, params *struct{ RawOpera
 
 	any := false
 	for _, tx := range operationsSet.Operations {
-		_, err := this.blockchain.AddOperation(&tx)
+		_, err := this.blockchain.TxPoolAddOperation(&tx)
 		if err != nil {
 			utils.Tracef("Error: %v", err)
 		} else if !any {

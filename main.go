@@ -220,7 +220,7 @@ func run(cliContext *cli.Context) error {
 				}
 
 				return network.WithRpcServer(fmt.Sprintf("%s:%d", defaults.RPCBindAddress, defaults.RPCPort), api.NewApi(blockchain), func() error {
-					c := make(chan os.Signal, 2)
+					c := make(chan os.Signal, 1)
 					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 					<-c
 					utils.Ftracef(cliContext.App.Writer, "Exit signal received. Terminating...")

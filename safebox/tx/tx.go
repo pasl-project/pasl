@@ -176,8 +176,7 @@ func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, *Tx, error) {
 
 	var tx Tx
 	if err := tx.Deserialize(bytes.NewBuffer(metadata.TxRaw)); err != nil {
-		utils.Tracef("Failed to deserialize tx")
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("Failed to deserialize tx: %v", err)
 	}
 
 	return &metadata, &tx, nil

@@ -157,8 +157,6 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 func (this *manager) sync(ctx context.Context) bool {
 	result := false
 
-	wg := sync.WaitGroup{}
-	defer wg.Wait()
 	nodeHeight, _, _ := this.blockchain.GetState()
 	for {
 		select {
@@ -191,26 +189,11 @@ func (this *manager) sync(ctx context.Context) bool {
 		blocks := conn.BlocksGet(nodeHeight, to)
 		nodeHeight += uint32(len(blocks))
 
-		packsToFlush := make(map[uint32]struct{})
-		wg.Wait()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for _, block := range blocks {
-				if _, updatedPacks, err := this.blockchain.AddBlockSerialized(&block, true); err == nil {
-					for packIndex := range updatedPacks {
-						packsToFlush[packIndex] = struct{}{}
-					}
-				} else if err == blockchain.ErrParentNotFound {
-					utils.Tracef("[P2P %s] Possible chain split at block #%d %v", conn.logPrefix, block.Header.Index, err)
-				} else {
+		if added, block, err := this.blockchain.AddBlocksSerialized(blocks); err != nil {
 					utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
-				}
+			return added > 0
 			}
-			if err := this.blockchain.FlushPacks(packsToFlush); err != nil {
-				utils.Tracef("Failed to flush packs %v", err)
-			}
-		}()
+
 		result = true
 	}
 

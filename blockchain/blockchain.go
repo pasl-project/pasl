@@ -28,14 +28,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pasl-project/pasl/storage"
-
 	"github.com/pasl-project/pasl/accounter"
 	"github.com/pasl-project/pasl/common"
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/safebox/tx"
+	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
 )
 
@@ -103,7 +102,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		return nil, err
 	}
 	if restore {
-		blockchain.FlushPacks(packs)
+		blockchain.flushPacks(packs)
 	}
 
 	return blockchain, nil
@@ -255,7 +254,29 @@ func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, synci
 	}, true, syncing)
 }
 
-func (this *Blockchain) FlushPacks(updatedPacks map[uint32]struct{}) error {
+func (this *Blockchain) AddBlocksSerialized(blocks []safebox.SerializedBlock) (added int, block *safebox.SerializedBlock, err error) {
+	packsToFlush := make(map[uint32]struct{})
+	defer func() {
+		if err := this.flushPacks(packsToFlush); err != nil {
+			utils.Tracef("Failed to flush packs %v", err)
+		}
+	}()
+
+	for index := range blocks {
+		if _, updatedPacks, err := this.AddBlockSerialized(&blocks[index], true); err == nil {
+			for packIndex := range updatedPacks {
+				packsToFlush[packIndex] = struct{}{}
+			}
+			added++
+		} else {
+			return added, &blocks[index], err
+		}
+	}
+
+	return added, nil, nil
+}
+
+func (this *Blockchain) flushPacks(updatedPacks map[uint32]struct{}) error {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 

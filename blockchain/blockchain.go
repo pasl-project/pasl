@@ -39,6 +39,7 @@ import (
 )
 
 var (
+	ErrInvalidOrder    = errors.New("Unexpected block index")
 	ErrFutureTimestamp = errors.New("Block time is too far in the future")
 	ErrParentNotFound  = errors.New("Parent block not found")
 )
@@ -49,6 +50,11 @@ type Blockchain struct {
 	safebox *safebox.Safebox
 	lock    sync.RWMutex
 	target  common.TargetBase
+}
+
+type blockInfo struct {
+	meta         *safebox.BlockMetadata
+	affectedByTx map[*accounter.Account]map[uint32]uint32
 }
 
 func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
@@ -74,14 +80,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		return common.NewTarget(defaults.MinTarget)
 	}
 
-	safeboxInstance := safebox.NewSafebox(accounter)
-	target := safeboxInstance.GetFork().GetNextTarget(getPrevTarget(), safeboxInstance.GetLastTimestamps)
-
-	blockchain := &Blockchain{
-		storage: s,
-		safebox: safeboxInstance,
-		target:  common.NewTarget(target),
-	}
+	blockchain := newBlockchain(s, accounter, getPrevTarget())
 
 	if !restore && height == nil {
 		return blockchain, nil
@@ -93,7 +92,11 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		if err := utils.Deserialize(&blockMeta, bytes.NewBuffer(data)); err != nil {
 			return err
 		}
-		_, updatedPacks, err := blockchain.AddBlock(&blockMeta, false, false)
+		block, err := safebox.NewBlock(&blockMeta)
+		if err != nil {
+			return err
+		}
+		_, _, updatedPacks, _, err := blockchain.AddBlock(block)
 		for packIndex := range updatedPacks {
 			packs[packIndex] = struct{}{}
 		}
@@ -108,13 +111,26 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 	return blockchain, nil
 }
 
+func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target common.TargetBase) *Blockchain {
+	safeboxInstance := safebox.NewSafebox(accounter)
+	nextTarget := safeboxInstance.GetFork().GetNextTarget(target, safeboxInstance.GetLastTimestamps)
+
+	blockchain := &Blockchain{
+		storage: s,
+		safebox: safeboxInstance,
+		target:  common.NewTarget(nextTarget),
+	}
+
+	return blockchain
+}
+
 func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
 	height, err := storage.Load(func(index uint32, data []byte) error {
 		var pack accounter.PackBase
 		if err := utils.Deserialize(&pack, bytes.NewBuffer(data)); err != nil {
 			return err
 		}
-		accounterInstance.AppendPack(&pack)
+		accounterInstance.AppendPack(pack)
 		return nil
 	})
 	if err != nil {
@@ -142,138 +158,273 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (this *Blockchain) AddBlock(meta *safebox.BlockMetadata, store bool, syncing bool) (safebox.BlockBase, map[uint32]struct{}, error) {
+func (this *Blockchain) AddBlock(block safebox.BlockBase) (*safebox.Safebox, common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	block, err := safebox.NewBlock(meta)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	if block.GetTimestamp() > uint32(time.Now().Unix())+defaults.MaxBlockTimeOffset {
-		return nil, nil, ErrFutureTimestamp
+		return nil, nil, nil, nil, ErrFutureTimestamp
 	}
 
 	// TODO: check block hash for genesis block
 	height, safeboxHash, _ := this.safebox.GetState()
 	if height != block.GetIndex() {
-		return nil, make(map[uint32]struct{}), nil
+		return nil, nil, nil, nil, ErrInvalidOrder
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
 		utils.Tracef("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
-		return nil, nil, ErrParentNotFound
+		return nil, nil, nil, nil, ErrParentNotFound
 	}
 
 	lastTimestamps := this.safebox.GetLastTimestamps(1)
 	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return nil, nil, errors.New("Invalid timestamp")
+		return nil, nil, nil, nil, errors.New("Invalid timestamp")
 	}
 	if err := this.safebox.GetFork().CheckBlock(this.target, block); err != nil {
-		return nil, nil, errors.New("Invalid block: " + err.Error())
+		return nil, nil, nil, nil, errors.New("Invalid block: " + err.Error())
 	}
 
 	newSafebox, updatedPacks, affectedByTx, err := this.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	newHeight, _, _ := newSafebox.GetState()
+	newTarget := this.target
 	if fork := safebox.TryActivateFork(newHeight, block.GetPrevSafeBoxHash()); fork != nil {
-		this.target = block.GetTarget()
+		newTarget = block.GetTarget()
 		newSafebox.SetFork(fork)
 	}
+	newTarget = common.NewTarget(newSafebox.GetFork().GetNextTarget(newTarget, newSafebox.GetLastTimestamps))
 
-	if store {
-		err = this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
-			if err = s.StoreBlock(ctx, block.GetIndex(), utils.Serialize(meta)); err != nil {
+	return newSafebox, newTarget, updatedPacks, affectedByTx, nil
+}
+
+func (this *Blockchain) ProcessNewBlock(blockSerialized *safebox.SerializedBlock) error {
+	meta := &safebox.BlockMetadata{
+		Index:           blockSerialized.Header.Index,
+		Miner:           blockSerialized.Header.Miner,
+		Version:         blockSerialized.Header.Version,
+		Timestamp:       blockSerialized.Header.Time,
+		Target:          blockSerialized.Header.Target,
+		Nonce:           blockSerialized.Header.Nonce,
+		Payload:         blockSerialized.Header.Payload,
+		PrevSafeBoxHash: blockSerialized.Header.PrevSafeboxHash,
+		Operations:      blockSerialized.Operations,
+	}
+	block, err := safebox.NewBlock(meta)
+	if err != nil {
+		return err
+	}
+
+	newSafebox, newTarget, updatedPacks, affectedByTx, err := this.AddBlock(block)
+	if err != nil {
+		return err
+	}
+	newHeight, _, _ := newSafebox.GetState()
+
+	err = this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
+		for packIndex := range updatedPacks {
+			if err := s.StoreAccountPack(ctx, packIndex, newSafebox.GetAccountPackSerialized(packIndex)); err != nil {
+				return err
+			}
+		}
+
+		if err = s.StoreBlock(ctx, block.GetIndex(), utils.Serialize(meta)); err != nil {
+			return err
+		}
+
+		operations := block.GetOperations()
+		txIDBytTxIndex := make(map[uint32]uint64)
+
+		for index, _ := range operations {
+			txIndexInsideBlock := uint32(index)
+			tx := &operations[txIndexInsideBlock]
+			txRipemd160Hash := [20]byte{}
+			copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+			txId, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
+			if err != nil {
+				return err
+			}
+			txMetadata := tx.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
+			if err = s.StoreTxMetadata(ctx, txId, utils.Serialize(txMetadata)); err != nil {
+				return err
+			}
+			txIDBytTxIndex[txIndexInsideBlock] = txId
+		}
+
+		for account, txIndexToAccountTxIndex := range affectedByTx {
+			for txIndexInsideBlock, accountTxIndex := range txIndexToAccountTxIndex {
+				if err = s.StoreAccountOperation(ctx, account.GetNumber(), accountTxIndex, txIDBytTxIndex[txIndexInsideBlock]); err != nil {
+					return err
+				}
+			}
+		}
+
+		for packIndex := range updatedPacks {
+			if err = s.StoreAccountPack(ctx, packIndex, newSafebox.GetAccountPackSerialized(packIndex)); err != nil {
+				return err
+			}
+		}
+
+		if newHeight%defaults.MaxAltChainLength == 0 {
+			if buffer := newSafebox.SerializeAccounter(); buffer != nil {
+				if err = s.StoreSnapshot(ctx, newHeight%(defaults.MaxAltChainLength*2)/defaults.MaxAltChainLength, buffer); err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("failed to serialize accounter")
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		utils.Tracef("Error storing blockchain state: %v", err)
+		return err
+	}
+
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
+	this.txPoolCleanUpUnsafe(block.GetOperations())
+	this.safebox = newSafebox
+	this.target = newTarget
+
+	return nil
+}
+
+func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) error {
+	{
+		header := blocks[0].Header
+		mainBlock := this.GetBlock(header.Index)
+		if !bytes.Equal(mainBlock.GetPrevSafeBoxHash(), header.PrevSafeboxHash) {
+			return fmt.Errorf("alternate chain parent not found")
+		}
+	}
+
+	snapshot := accounter.NewAccounter()
+	snapshotNumber := (blocks[0].Header.Index % (defaults.MaxAltChainLength * 2)) / defaults.MaxAltChainLength
+	if buffer := this.storage.LoadSnapshot(snapshotNumber); buffer != nil {
+		if err := snapshot.Deserialize(bytes.NewBuffer(buffer)); err != nil {
+			return errors.New("failed to deserialize snapshot")
+		}
+	} else {
+		return errors.New("failed to load snapshot")
+	}
+
+	snapshotHeight, _, _ := snapshot.GetState()
+	mainBlock := this.GetBlock(snapshotHeight - 1)
+	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
+
+	updatedPacksTotal := make(map[uint32]struct{})
+	affectedByBlocks := make(map[safebox.BlockBase]blockInfo)
+
+	mainBlocks := make([]safebox.SerializedBlock, 0)
+	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
+		mainBlock := this.GetBlock(index)
+		mainBlocks = append(mainBlocks, this.SerializeBlock(mainBlock))
+	}
+
+	blocks = append(mainBlocks, blocks...)
+	for index := range blocks {
+		meta := &safebox.BlockMetadata{
+			Index:           blocks[index].Header.Index,
+			Miner:           blocks[index].Header.Miner,
+			Version:         blocks[index].Header.Version,
+			Timestamp:       blocks[index].Header.Time,
+			Target:          blocks[index].Header.Target,
+			Nonce:           blocks[index].Header.Nonce,
+			Payload:         blocks[index].Header.Payload,
+			PrevSafeBoxHash: blocks[index].Header.PrevSafeboxHash,
+			Operations:      blocks[index].Operations,
+		}
+		block, err := safebox.NewBlock(meta)
+		if err != nil {
+			return err
+		}
+
+		newSafebox, newTarget, updatedPacks, affectedByTx, err := newBlockchain.AddBlock(block)
+		if err != nil {
+			return fmt.Errorf("failed to apply alternate chain: %v", err)
+		}
+		newBlockchain.safebox = newSafebox
+		newBlockchain.target = newTarget
+		for pack := range updatedPacks {
+			updatedPacksTotal[pack] = struct{}{}
+		}
+		affectedByBlocks[block] = blockInfo{
+			meta:         meta,
+			affectedByTx: affectedByTx,
+		}
+	}
+
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
+	_, _, cumulativeDifficulty := newBlockchain.GetState()
+	_, _, currentCumulativeDifficulty := this.GetState()
+	if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {
+		return fmt.Errorf("cumulative difficulty: main chain %s >= %s alt chain", currentCumulativeDifficulty.String(), cumulativeDifficulty.String())
+	}
+
+	// TODO: code duplication
+	err := newBlockchain.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
+		for block, blockInfo := range affectedByBlocks {
+			if err := s.StoreBlock(ctx, block.GetIndex(), utils.Serialize(blockInfo.meta)); err != nil {
 				return err
 			}
 
 			operations := block.GetOperations()
 			txIDBytTxIndex := make(map[uint32]uint64)
 
-			for index, _ := range operations {
+			for index := range operations {
 				txIndexInsideBlock := uint32(index)
 				tx := &operations[txIndexInsideBlock]
 				txRipemd160Hash := [20]byte{}
 				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-				txId, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
+				txID, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
 				if err != nil {
 					return err
 				}
 				txMetadata := tx.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
-				if err = s.StoreTxMetadata(ctx, txId, utils.Serialize(txMetadata)); err != nil {
+				if err = s.StoreTxMetadata(ctx, txID, utils.Serialize(txMetadata)); err != nil {
 					return err
 				}
-				txIDBytTxIndex[txIndexInsideBlock] = txId
+				txIDBytTxIndex[txIndexInsideBlock] = txID
 			}
 
-			for account, txIndexInsideBlock := range affectedByTx {
-				if err = s.StoreAccountOperation(ctx, account.GetNumber(), account.GetOperationsTotal(), txIDBytTxIndex[txIndexInsideBlock]); err != nil {
-					return err
-				}
-			}
-
-			if !syncing {
-				for packIndex := range updatedPacks {
-					if err = s.StoreAccountPack(ctx, packIndex, newSafebox.GetAccountPackSerialized(packIndex)); err != nil {
+			for account, txIndexToAccountTxIndex := range blockInfo.affectedByTx {
+				for txIndexInsideBlock, accountTxIndex := range txIndexToAccountTxIndex {
+					if err := s.StoreAccountOperation(ctx, account.GetNumber(), accountTxIndex, txIDBytTxIndex[txIndexInsideBlock]); err != nil {
 						return err
 					}
 				}
-			} else {
-
 			}
 
-			return nil
-		})
-
-		if err != nil {
-			utils.Tracef("Error storing blockchain state: %v", err)
-			return nil, nil, err
-		}
-	}
-
-	this.txPoolCleanUpUnsafe(block.GetOperations())
-	this.target.Set(newSafebox.GetFork().GetNextTarget(this.target, newSafebox.GetLastTimestamps))
-	this.safebox = newSafebox
-	return block, updatedPacks, nil
-}
-
-func (this *Blockchain) AddBlockSerialized(block *safebox.SerializedBlock, syncing bool) (safebox.BlockBase, map[uint32]struct{}, error) {
-	return this.AddBlock(&safebox.BlockMetadata{
-		Index:           block.Header.Index,
-		Miner:           block.Header.Miner,
-		Version:         block.Header.Version,
-		Timestamp:       block.Header.Time,
-		Target:          block.Header.Target,
-		Nonce:           block.Header.Nonce,
-		Payload:         block.Header.Payload,
-		PrevSafeBoxHash: block.Header.PrevSafeboxHash,
-		Operations:      block.Operations,
-	}, true, syncing)
-}
-
-func (this *Blockchain) AddBlocksSerialized(blocks []safebox.SerializedBlock) (added int, block *safebox.SerializedBlock, err error) {
-	packsToFlush := make(map[uint32]struct{})
-	defer func() {
-		if err := this.flushPacks(packsToFlush); err != nil {
-			utils.Tracef("Failed to flush packs %v", err)
-		}
-	}()
-
-	for index := range blocks {
-		if _, updatedPacks, err := this.AddBlockSerialized(&blocks[index], true); err == nil {
-			for packIndex := range updatedPacks {
-				packsToFlush[packIndex] = struct{}{}
+			for packIndex := range updatedPacksTotal {
+				if err := s.StoreAccountPack(ctx, packIndex, newBlockchain.safebox.GetAccountPackSerialized(packIndex)); err != nil {
+					return err
+				}
 			}
-			added++
-		} else {
-			return added, &blocks[index], err
 		}
+
+		return nil
+	})
+
+	if err != nil {
+		utils.Tracef("Error storing blockchain state: %v", err)
+		return err
 	}
 
-	return added, nil, nil
+	// TODO: drop orphaned blocks and txes from storage
+	// TODO: invalidate mem pool txes
+
+	this.safebox = newBlockchain.safebox
+	this.target = newBlockchain.target
+
+	return nil
 }
 
 func (this *Blockchain) flushPacks(updatedPacks map[uint32]struct{}) error {

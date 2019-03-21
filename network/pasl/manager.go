@@ -99,7 +99,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		for {
 			select {
 			case event := <-manager.onNewBlock:
-				if _, _, err := manager.blockchain.AddBlockSerialized(&event.SerializedBlock, false); err != nil {
+				if err := manager.blockchain.ProcessNewBlock(&event.SerializedBlock); err != nil {
 					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
 				} else if event.shouldBroadcast {
 					manager.forEachConnection(func(conn *PascalConnection) {
@@ -189,10 +189,32 @@ func (this *manager) sync(ctx context.Context) bool {
 		blocks := conn.BlocksGet(nodeHeight, to)
 		nodeHeight += uint32(len(blocks))
 
-		if added, block, err := this.blockchain.AddBlocksSerialized(blocks); err != nil {
-					utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, block.Header.Index, err)
-			return added > 0
+		for index := range blocks {
+			switch err := this.blockchain.ProcessNewBlock(&blocks[index]); err {
+			case nil:
+				{
+					continue
+				}
+			case blockchain.ErrParentNotFound:
+				{
+					utils.Tracef("[P2P %s] Block #%d parent not found. Downloading alternate chain", conn.logPrefix, blocks[index].Header.Index)
+
+					from := utils.MaxUint32(blocks[index].Header.Index, defaults.MaxAltChainLength) - defaults.MaxAltChainLength
+					blocks := conn.BlocksGet(from, blocks[index].Header.Index)
+
+					if err := this.blockchain.AddAlternateChain(blocks); err != nil {
+						utils.Tracef("[P2P %s] Failed to switch to alternate chain: %v", conn.logPrefix, err)
+						return false
+					}
+					utils.Tracef("[P2P %s] Switched to alternate chain", conn.logPrefix)
+				}
+			default:
+				{
+					utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, blocks[index].Header.Index, err)
+					return false
+				}
 			}
+		}
 
 		result = true
 	}

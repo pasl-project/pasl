@@ -39,6 +39,7 @@ const (
 	RPCPort                 uint16        = 4003
 	TimeoutConnect          time.Duration = time.Duration(10) * time.Second
 	TimeoutRequest          time.Duration = time.Duration(60) * time.Second
+	MaxAltChainLength       uint32        = 100
 	MaxIncoming             uint32        = 100
 	MaxOutgoing             uint32        = 10
 	MaxBlockTimeOffset      uint32        = 15

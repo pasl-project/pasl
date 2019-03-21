@@ -221,7 +221,6 @@ func (this *Blockchain) ProcessNewBlock(blockSerialized *safebox.SerializedBlock
 	if err != nil {
 		return err
 	}
-	newHeight, _, _ := newSafebox.GetState()
 
 	err = this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
 		for packIndex := range updatedPacks {
@@ -237,20 +236,20 @@ func (this *Blockchain) ProcessNewBlock(blockSerialized *safebox.SerializedBlock
 		operations := block.GetOperations()
 		txIDBytTxIndex := make(map[uint32]uint64)
 
-		for index, _ := range operations {
+		for index := range operations {
 			txIndexInsideBlock := uint32(index)
 			tx := &operations[txIndexInsideBlock]
 			txRipemd160Hash := [20]byte{}
 			copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
-			txId, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
+			txID, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
 			if err != nil {
 				return err
 			}
 			txMetadata := tx.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
-			if err = s.StoreTxMetadata(ctx, txId, utils.Serialize(txMetadata)); err != nil {
+			if err = s.StoreTxMetadata(ctx, txID, utils.Serialize(txMetadata)); err != nil {
 				return err
 			}
-			txIDBytTxIndex[txIndexInsideBlock] = txId
+			txIDBytTxIndex[txIndexInsideBlock] = txID
 		}
 
 		for account, txIndexToAccountTxIndex := range affectedByTx {
@@ -267,9 +266,9 @@ func (this *Blockchain) ProcessNewBlock(blockSerialized *safebox.SerializedBlock
 			}
 		}
 
-		if newHeight%defaults.MaxAltChainLength == 0 {
+		if block.GetIndex()%defaults.MaxAltChainLength == 0 {
 			if buffer := newSafebox.SerializeAccounter(); buffer != nil {
-				if err = s.StoreSnapshot(ctx, newHeight%(defaults.MaxAltChainLength*2)/defaults.MaxAltChainLength, buffer); err != nil {
+				if err = s.StoreSnapshot(ctx, block.GetIndex()%(defaults.MaxAltChainLength*2)/defaults.MaxAltChainLength, buffer); err != nil {
 					return err
 				}
 			} else {

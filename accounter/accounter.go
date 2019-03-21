@@ -22,6 +22,7 @@ package accounter
 import (
 	"bytes"
 	"crypto/sha256"
+	"io"
 	"math/big"
 	"sync"
 
@@ -34,7 +35,11 @@ type Accounter struct {
 	dirty bool
 	hash  []byte
 	lock  sync.RWMutex
-	packs []*PackBase
+	packs []PackBase
+}
+
+type accounterSerialized struct {
+	Packs []PackBase
 }
 
 func NewAccounter() *Accounter {
@@ -44,7 +49,7 @@ func NewAccounter() *Accounter {
 	return &Accounter{
 		dirty: false,
 		hash:  hash,
-		packs: make([]*PackBase, 0),
+		packs: make([]PackBase, 0),
 	}
 }
 
@@ -55,7 +60,7 @@ func (this *Accounter) Copy() *Accounter {
 	hash := make([]byte, 32)
 	copy(hash[:], this.hash)
 
-	packs := make([]*PackBase, len(this.packs))
+	packs := make([]PackBase, len(this.packs))
 	copy(packs[:], this.packs)
 
 	return &Accounter{
@@ -111,7 +116,7 @@ func (this *Accounter) getCumulativeDifficultyUnsafe() *big.Int {
 
 func (this *Accounter) getPackContainingAccountUnsafe(number uint32) *PackBase {
 	pack := number / uint32(defaults.AccountsPerBlock)
-	return this.packs[pack]
+	return &this.packs[pack]
 }
 
 func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.Int, uint32) {
@@ -145,7 +150,7 @@ func (this *Accounter) GetAccountPackSerialized(index uint32) []byte {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return utils.Serialize(this.packs[index])
+	return utils.Serialize(&this.packs[index])
 }
 
 func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
@@ -154,12 +159,12 @@ func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
 	pack.MarkDirty()
 }
 
-func (this *Accounter) appendPackUnsafe(pack *PackBase) {
+func (this *Accounter) appendPackUnsafe(pack PackBase) {
 	this.packs = append(this.packs, pack)
 	this.dirty = true
 }
 
-func (this *Accounter) AppendPack(pack *PackBase) {
+func (this *Accounter) AppendPack(pack PackBase) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -211,4 +216,27 @@ func (this *Accounter) KeyChange(number uint32, key *crypto.Public, index uint32
 	account.operationsTotal = account.operationsTotal + 1
 	account.publicKey = *key
 	account.updatedIndex = index
+}
+
+func (this *Accounter) Serialize(w io.Writer) error {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	_, err := w.Write(utils.Serialize(accounterSerialized{
+		Packs: this.packs,
+	}))
+	return err
+}
+
+func (this *Accounter) Deserialize(r io.Reader) error {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	var unpacked accounterSerialized
+	if err := utils.Deserialize(&unpacked, r); err != nil {
+		return err
+	}
+	this.packs = unpacked.Packs
+	this.dirty = true
+	return nil
 }

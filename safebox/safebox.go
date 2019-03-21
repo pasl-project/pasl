@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package safebox
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
 	"sync"
@@ -234,4 +235,15 @@ func (this *Safebox) GetAccountPackSerialized(index uint32) []byte {
 	defer this.lock.RUnlock()
 
 	return this.accounter.GetAccountPackSerialized(index)
+}
+
+func (this *Safebox) SerializeAccounter() []byte {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	buffer := bytes.NewBuffer(nil)
+	if err := this.accounter.Serialize(buffer); err != nil {
+		return nil
+	}
+	return buffer.Bytes()
 }

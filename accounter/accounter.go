@@ -32,10 +32,11 @@ import (
 )
 
 type Accounter struct {
-	dirty bool
-	hash  []byte
-	lock  sync.RWMutex
-	packs []PackBase
+	dirty      map[int]struct{}
+	hash       []byte
+	hashBuffer []byte
+	lock       sync.RWMutex
+	packs      []PackBase
 }
 
 type accounterSerialized struct {
@@ -43,13 +44,14 @@ type accounterSerialized struct {
 }
 
 func NewAccounter() *Accounter {
-	hash := make([]byte, 32)
+	hash := make([]byte, sha256.Size)
 	copy(hash[:], defaults.GenesisSafeBox[:])
 
 	return &Accounter{
-		dirty: false,
-		hash:  hash,
-		packs: make([]PackBase, 0),
+		dirty:      make(map[int]struct{}),
+		hash:       hash,
+		hashBuffer: make([]byte, 0),
+		packs:      make([]PackBase, 0),
 	}
 }
 
@@ -57,16 +59,25 @@ func (this *Accounter) Copy() *Accounter {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	hash := make([]byte, 32)
+	hash := make([]byte, sha256.Size)
 	copy(hash[:], this.hash)
+
+	hashBuffer := make([]byte, len(this.hashBuffer))
+	copy(hashBuffer[:], this.hashBuffer)
 
 	packs := make([]PackBase, len(this.packs))
 	copy(packs[:], this.packs)
 
+	dirty := make(map[int]struct{})
+	for each := range this.dirty {
+		dirty[each] = struct{}{}
+	}
+
 	return &Accounter{
-		dirty: this.dirty,
-		hash:  hash,
-		packs: packs,
+		dirty:      dirty,
+		hash:       hash,
+		hashBuffer: hashBuffer,
+		packs:      packs,
 	}
 }
 
@@ -83,16 +94,17 @@ func (this *Accounter) ToBlob() []byte {
 }
 
 func (this *Accounter) getHashUnsafe() []byte {
-	if !this.dirty {
+	if len(this.dirty) == 0 {
 		return this.hash[:]
 	}
-	this.dirty = false
 
-	hash := sha256.New()
-	for _, it := range this.packs {
-		hash.Write(it.GetHash())
+	for packIndex := range this.dirty {
+		copy(this.hashBuffer[packIndex*sha256.Size:(packIndex+1)*sha256.Size], this.packs[packIndex].GetHash())
 	}
-	copy(this.hash[:32], hash.Sum(nil)[:32])
+	this.dirty = make(map[int]struct{})
+
+	hash := sha256.Sum256(this.hashBuffer)
+	copy(this.hash[:sha256.Size], hash[:])
 	return this.hash[:]
 }
 
@@ -154,14 +166,15 @@ func (this *Accounter) GetAccountPackSerialized(index uint32) []byte {
 }
 
 func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
-	this.dirty = true
 	pack := this.getPackContainingAccountUnsafe(number)
 	pack.MarkDirty()
+	this.dirty[int(pack.GetIndex())] = struct{}{}
 }
 
 func (this *Accounter) appendPackUnsafe(pack PackBase) {
 	this.packs = append(this.packs, pack)
-	this.dirty = true
+	this.hashBuffer = append(this.hashBuffer, make([]byte, 32)...)
+	this.dirty[len(this.packs)-1] = struct{}{}
 }
 
 func (this *Accounter) AppendPack(pack PackBase) {
@@ -237,6 +250,10 @@ func (this *Accounter) Deserialize(r io.Reader) error {
 		return err
 	}
 	this.packs = unpacked.Packs
-	this.dirty = true
+	this.hashBuffer = make([]byte, len(this.packs)*sha256.Size)
+	for packIndex := range this.packs {
+		copy(this.hashBuffer[packIndex*sha256.Size:(packIndex*+1)*sha256.Size], this.packs[packIndex].GetHash())
+	}
+	this.dirty = make(map[int]struct{})
 	return nil
 }

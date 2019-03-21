@@ -39,6 +39,7 @@ const (
 	tableBlock      = "block"
 	tablePack       = "pack"
 	tablePeers      = "peers"
+	tableSnapshots  = "snapshots"
 	tableTx         = "tx"
 	tableTxMetadata = "txMetadata"
 )
@@ -54,11 +55,13 @@ type StorageWritable interface {
 	StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error
 	StoreAccountPack(context interface{}, index uint32, data []byte) error
 	StorePeers(context interface{}, peers func(func(address []byte, data []byte))) error
+	StoreSnapshot(context interface{}, number uint32, serialized []byte) error
 }
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
 	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
+	LoadSnapshot(number uint32) (serialized []byte)
 	WithWritable(fn func(storageWritable StorageWritable, context interface{}) error) error
 	LoadPeers(peers func(address []byte, data []byte)) error
 	GetBlock(index uint32) (data []byte, err error)
@@ -104,6 +107,9 @@ func (this *StorageBoltDb) createTables() error {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tablePack)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tableSnapshots)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableTx)); err != nil {
@@ -318,6 +324,41 @@ func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) er
 		}
 		return nil
 	})
+}
+
+func (this *StorageBoltDb) LoadSnapshot(number uint32) (serialized []byte) {
+	if this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tableSnapshots)); bucket == nil {
+			return nil
+		}
+
+		var buffer [4]byte
+		binary.BigEndian.PutUint32(buffer[:], number)
+
+		serialized = bucket.Get(buffer[:])
+
+		return nil
+	}) != nil {
+		return nil
+	}
+	return serialized
+}
+
+func (this *StorageBoltDb) StoreSnapshot(context interface{}, number uint32, serialized []byte) error {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tableSnapshots
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	var buffer [4]byte
+	binary.BigEndian.PutUint32(buffer[:], number)
+
+	return bucket.Put(buffer[:], serialized)
 }
 
 func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {

@@ -197,10 +197,10 @@ func run(cliContext *cli.Context) error {
 						peers := node.GetPeersByNetwork("tcp")
 						s.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
 							return s.StorePeers(ctx, func(fn func(address []byte, data []byte)) {
-							for address := range peers {
-								fn([]byte(address), utils.Serialize(peers[address]))
-							}
-						})
+								for address := range peers {
+									fn([]byte(address), utils.Serialize(peers[address]))
+								}
+							})
 						})
 					}()
 

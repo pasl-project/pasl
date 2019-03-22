@@ -68,9 +68,12 @@ func (this Accounter) Copy() Accounter {
 	packs := make([]PackBase, len(this.packs))
 	copy(packs, this.packs)
 
-	dirty := make(map[int]struct{})
-	for each := range this.dirty {
-		dirty[each] = struct{}{}
+	dirty := map[int]struct{}(nil)
+	if this.dirty != nil {
+		dirty = make(map[int]struct{})
+		for each := range this.dirty {
+			dirty[each] = struct{}{}
+		}
 	}
 
 	return Accounter{
@@ -94,6 +97,14 @@ func (this *Accounter) ToBlob() []byte {
 }
 
 func (this *Accounter) getHashUnsafe() []byte {
+	if this.dirty == nil {
+		this.dirty = make(map[int]struct{})
+		this.hashBuffer = make([]byte, len(this.packs)*sha256.Size)
+		for packIndex := range this.packs {
+			this.dirty[packIndex] = struct{}{}
+		}
+	}
+
 	if len(this.dirty) == 0 {
 		return this.hash[:]
 	}
@@ -101,6 +112,7 @@ func (this *Accounter) getHashUnsafe() []byte {
 	for packIndex := range this.dirty {
 		copy(this.hashBuffer[packIndex*sha256.Size:(packIndex+1)*sha256.Size], this.packs[packIndex].GetHash())
 	}
+
 	this.dirty = make(map[int]struct{})
 
 	hash := sha256.Sum256(this.hashBuffer)
@@ -250,10 +262,6 @@ func (this *Accounter) Deserialize(r io.Reader) error {
 		return err
 	}
 	this.packs = unpacked.Packs
-	this.hashBuffer = make([]byte, len(this.packs)*sha256.Size)
-	for packIndex := range this.packs {
-		copy(this.hashBuffer[packIndex*sha256.Size:(packIndex*+1)*sha256.Size], this.packs[packIndex].GetHash())
-	}
-	this.dirty = make(map[int]struct{})
+	this.dirty = nil
 	return nil
 }

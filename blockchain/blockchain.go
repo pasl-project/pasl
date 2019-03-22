@@ -199,14 +199,14 @@ func (Blockchain) addBlock(currentSafebox safebox.Safebox, target common.TargetB
 	return newSafebox, newTarget, updatedPacks, affectedByTx, nil
 }
 
-func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock) error {
+func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	return this.processNewBlocksUnsafe(blocks)
+	return this.processNewBlocksUnsafe(blocks, preSave)
 }
 
-func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock) error {
+func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
 	currentSafebox := this.safebox
 	currentTarget := this.target
 	updatedPacksTotal := make(map[uint32]struct{})
@@ -244,6 +244,12 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock)
 		affectedByBlocks[block] = blockInfo{
 			meta:         meta,
 			affectedByTx: affectedByTx,
+		}
+	}
+
+	if preSave != nil {
+		if err := (*preSave)(*currentSafebox, currentTarget); err != nil {
+			return err
 		}
 	}
 
@@ -285,15 +291,22 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock)
 					}
 				}
 			}
+		}
 
-			if block.GetIndex()%defaults.MaxAltChainLength == 0 {
-				if buffer := currentSafebox.SerializeAccounter(); buffer != nil {
-					if err := s.StoreSnapshot(ctx, block.GetIndex()%(defaults.MaxAltChainLength*2)/defaults.MaxAltChainLength, buffer); err != nil {
-						return err
-					}
-				} else {
-					return fmt.Errorf("failed to serialize accounter")
+		height, _, _ := currentSafebox.GetState()
+		if height%(defaults.MaxAltChainLength/2) == 0 {
+			for _, snapshotHeight := range this.storage.ListSnapshots() {
+				if snapshotHeight+defaults.MaxAltChainLength < height {
+					s.DropSnapshot(ctx, snapshotHeight)
 				}
+			}
+
+			if buffer := currentSafebox.SerializeAccounter(); buffer != nil {
+				if err := s.StoreSnapshot(ctx, height, buffer); err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("failed to serialize accounter")
 			}
 		}
 
@@ -316,7 +329,32 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock)
 }
 
 func (this *Blockchain) ProcessNewBlock(block safebox.SerializedBlock) error {
-	return this.ProcessNewBlocks([]safebox.SerializedBlock{block})
+	return this.ProcessNewBlocks([]safebox.SerializedBlock{block}, nil)
+}
+
+func (this Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error) {
+	buffer := this.storage.LoadSnapshot(height)
+	if buffer == nil {
+		return nil, fmt.Errorf("failed to load snapshot %d", height)
+	}
+	snapshot := accounter.NewAccounter()
+	if err := snapshot.Deserialize(bytes.NewBuffer(buffer)); err != nil {
+		return nil, fmt.Errorf("failed to deserialize snapshot %d", height)
+	}
+	return snapshot, nil
+}
+
+func (this Blockchain) LoadNearestSnapshot(targetHeight uint32) (*accounter.Accounter, error) {
+	for _, height := range this.storage.ListSnapshots() {
+		if height > targetHeight {
+			continue
+		}
+		if height+defaults.MaxAltChainLength < targetHeight {
+			continue
+		}
+		return this.LoadSnapshot(height)
+	}
+	return nil, fmt.Errorf("no matching snapshots")
 }
 
 func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) error {
@@ -328,22 +366,17 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 		}
 	}
 
-	snapshot := accounter.NewAccounter()
-	snapshotNumber := (blocks[0].Header.Index % (defaults.MaxAltChainLength * 2)) / defaults.MaxAltChainLength
-	if buffer := this.storage.LoadSnapshot(snapshotNumber); buffer != nil {
-		if err := snapshot.Deserialize(bytes.NewBuffer(buffer)); err != nil {
-			return errors.New("failed to deserialize snapshot")
-		}
-	} else {
-		return errors.New("failed to load snapshot")
+	snapshot, err := this.LoadNearestSnapshot(blocks[0].Header.Index)
+	if err != nil {
+		return fmt.Errorf("failed to find nearest snapshot: %v", err)
 	}
 
 	snapshotHeight, _, _ := snapshot.GetState()
 	mainBlock := this.GetBlock(snapshotHeight - 1)
+
 	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
 	currentSafebox := newBlockchain.safebox
 	currentTarget := newBlockchain.target
-
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
 		block := this.GetBlock(index)
 		newSafebox, newTarget, _, _, err := this.addBlock(*currentSafebox, currentTarget, block)
@@ -353,18 +386,23 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 		currentSafebox = newSafebox
 		currentTarget = newTarget
 	}
+	newBlockchain.safebox = currentSafebox
+	newBlockchain.target = currentTarget
 
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	_, _, cumulativeDifficulty := newBlockchain.GetState()
-	_, _, currentCumulativeDifficulty := this.GetState()
-	if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {
-		return fmt.Errorf("cumulative difficulty: main chain %s >= %s alt chain", currentCumulativeDifficulty.String(), cumulativeDifficulty.String())
+	cumulativeDifficultyCheck := func(altSafebox safebox.Safebox, target common.TargetBase) error {
+		_, _, cumulativeDifficulty := altSafebox.GetState()
+		_, _, currentCumulativeDifficulty := this.GetState()
+		if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {
+			return fmt.Errorf("cumulative difficulty: main chain %s >= %s alt chain", currentCumulativeDifficulty.String(), cumulativeDifficulty.String())
+		}
+		return nil
 	}
 
-	if err := this.processNewBlocksUnsafe(blocks); err != nil {
-		utils.Tracef("Error storing blockchain state: %v", err)
+	if err := newBlockchain.ProcessNewBlocks(blocks, &cumulativeDifficultyCheck); err != nil {
+		utils.Tracef("rejected alt chain: %v", err)
 		return err
 	}
 

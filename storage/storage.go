@@ -55,13 +55,18 @@ type StorageWritable interface {
 	StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error
 	StoreAccountPack(context interface{}, index uint32, data []byte) error
 	StorePeers(context interface{}, peers func(func(address []byte, data []byte))) error
+
 	StoreSnapshot(context interface{}, number uint32, serialized []byte) error
+	DropSnapshot(context interface{}, height uint32) error
 }
 
 type Storage interface {
 	Load(callback func(number uint32, serialized []byte) error) (height uint32, err error)
 	LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error
-	LoadSnapshot(number uint32) (serialized []byte)
+
+	ListSnapshots() []uint32
+	LoadSnapshot(height uint32) (serialized []byte)
+
 	WithWritable(fn func(storageWritable StorageWritable, context interface{}) error) error
 	LoadPeers(peers func(address []byte, data []byte)) error
 	GetBlock(index uint32) (data []byte, err error)
@@ -326,7 +331,45 @@ func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) er
 	})
 }
 
-func (this *StorageBoltDb) LoadSnapshot(number uint32) (serialized []byte) {
+func (this *StorageBoltDb) DropSnapshot(context interface{}, height uint32) error {
+	tx := context.(*bolt.Tx)
+
+	var bucket *bolt.Bucket
+	tableName := tableSnapshots
+	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
+		return fmt.Errorf("Table doesn't exist %s", tableName)
+	}
+
+	var buffer [4]byte
+	binary.BigEndian.PutUint32(buffer[:], height)
+	return bucket.Delete(buffer[:])
+}
+
+func (this *StorageBoltDb) ListSnapshots() []uint32 {
+	result := make([]uint32, 0)
+
+	if this.db.View(func(tx *bolt.Tx) error {
+		var bucket *bolt.Bucket
+
+		if bucket = tx.Bucket([]byte(tableSnapshots)); bucket == nil {
+			return nil
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.First(); key != nil; key, _ = cursor.Next() {
+			height := binary.BigEndian.Uint32(key)
+			result = append(result, height)
+		}
+
+		return nil
+	}) != nil {
+		return nil
+	}
+
+	return result
+}
+
+func (this *StorageBoltDb) LoadSnapshot(height uint32) (serialized []byte) {
 	if this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 
@@ -335,7 +378,7 @@ func (this *StorageBoltDb) LoadSnapshot(number uint32) (serialized []byte) {
 		}
 
 		var buffer [4]byte
-		binary.BigEndian.PutUint32(buffer[:], number)
+		binary.BigEndian.PutUint32(buffer[:], height)
 
 		serialized = bucket.Get(buffer[:])
 
@@ -346,7 +389,7 @@ func (this *StorageBoltDb) LoadSnapshot(number uint32) (serialized []byte) {
 	return serialized
 }
 
-func (this *StorageBoltDb) StoreSnapshot(context interface{}, number uint32, serialized []byte) error {
+func (this *StorageBoltDb) StoreSnapshot(context interface{}, height uint32, serialized []byte) error {
 	tx := context.(*bolt.Tx)
 
 	var bucket *bolt.Bucket
@@ -356,7 +399,7 @@ func (this *StorageBoltDb) StoreSnapshot(context interface{}, number uint32, ser
 	}
 
 	var buffer [4]byte
-	binary.BigEndian.PutUint32(buffer[:], number)
+	binary.BigEndian.PutUint32(buffer[:], height)
 
 	return bucket.Put(buffer[:], serialized)
 }

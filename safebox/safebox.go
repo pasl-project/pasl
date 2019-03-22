@@ -34,12 +34,12 @@ import (
 )
 
 type Safebox struct {
-	accounter *accounter.Accounter
+	accounter accounter.Accounter
 	fork      Fork
 	lock      sync.RWMutex
 }
 
-func NewSafebox(accounter *accounter.Accounter) *Safebox {
+func NewSafebox(accounter accounter.Accounter) *Safebox {
 	height, SafeboxHash, _ := accounter.GetState()
 	return &Safebox{
 		accounter: accounter,
@@ -118,7 +118,7 @@ func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
 	return nil
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (this Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -155,7 +155,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		accountsAffected, err := operations[index].Apply(currentHeight, context, newSafebox.accounter)
+		accountsAffected, err := operations[index].Apply(currentHeight, context, &newSafebox.accounter)
 		if err != nil {
 			return nil, nil, nil, err
 		}

@@ -55,7 +55,7 @@ func NewAccounter() *Accounter {
 	}
 }
 
-func (this *Accounter) Copy() *Accounter {
+func (this Accounter) Copy() Accounter {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
@@ -66,14 +66,14 @@ func (this *Accounter) Copy() *Accounter {
 	copy(hashBuffer[:], this.hashBuffer)
 
 	packs := make([]PackBase, len(this.packs))
-	copy(packs[:], this.packs)
+	copy(packs, this.packs)
 
 	dirty := make(map[int]struct{})
 	for each := range this.dirty {
 		dirty[each] = struct{}{}
 	}
 
-	return &Accounter{
+	return Accounter{
 		dirty:      dirty,
 		hash:       hash,
 		hashBuffer: hashBuffer,

@@ -99,7 +99,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		for {
 			select {
 			case event := <-manager.onNewBlock:
-				if err := manager.blockchain.ProcessNewBlock(&event.SerializedBlock); err != nil {
+				if err := manager.blockchain.ProcessNewBlock(event.SerializedBlock); err != nil {
 					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
 				} else if event.shouldBroadcast {
 					manager.forEachConnection(func(conn *PascalConnection) {
@@ -190,7 +190,7 @@ func (this *manager) sync(ctx context.Context) bool {
 		nodeHeight += uint32(len(blocks))
 
 		for index := range blocks {
-			switch err := this.blockchain.ProcessNewBlock(&blocks[index]); err {
+			switch err := this.blockchain.ProcessNewBlock(blocks[index]); err {
 			case nil:
 				{
 					continue

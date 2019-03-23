@@ -16,7 +16,7 @@ var (
 	// ColferSizeMax is the upper limit for serial byte sizes.
 	ColferSizeMax = 1024 * 1024 * 1024
 	// ColferListMax is the upper limit for the number of elements in a list.
-	ColferListMax = 64 * 1024
+	ColferListMax = 1024 * 1024
 )
 
 // ColferMax signals an upper limit breach.

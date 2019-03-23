@@ -127,6 +127,14 @@ func (this *StorageBoltDb) createTables() error {
 	})
 }
 
+func (this StorageBoltDb) getTable(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
+	if bucket := tx.Bucket([]byte(name)); bucket != nil {
+		return bucket, nil
+	} else {
+		return nil, fmt.Errorf("Table doesn't exist %s", name)
+	}
+}
+
 func (this *StorageBoltDb) Load(callback func(index uint32, serialized []byte) error) (height uint32, err error) {
 	err = this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
@@ -214,10 +222,9 @@ func (this *StorageBoltDb) WithWritable(fn func(storageWritable StorageWritable,
 func (this *StorageBoltDb) StoreBlock(context interface{}, index uint32, data []byte) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableBlock
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableBlock)
+	if err != nil {
+		return err
 	}
 
 	buffer := [4]byte{}
@@ -230,10 +237,9 @@ func (this *StorageBoltDb) StoreBlock(context interface{}, index uint32, data []
 func (this *StorageBoltDb) StoreTxHash(context interface{}, txRipemd160Hash [20]byte, blockIndex uint32, txIndexInsideBlock uint32) (uint64, error) {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableTx
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return 0, fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableTx)
+	if err != nil {
+		return 0, err
 	}
 
 	txID := uint64(blockIndex)*4294967296 + uint64(txIndexInsideBlock)
@@ -249,10 +255,9 @@ func (this *StorageBoltDb) StoreTxHash(context interface{}, txRipemd160Hash [20]
 func (this *StorageBoltDb) StoreTxMetadata(context interface{}, txID uint64, txMetadata []byte) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableTxMetadata
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableTxMetadata)
+	if err != nil {
+		return err
 	}
 
 	buffer := bytes.NewBuffer([]byte(""))
@@ -265,10 +270,9 @@ func (this *StorageBoltDb) StoreTxMetadata(context interface{}, txID uint64, txM
 func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableAccountTx
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableAccountTx)
+	if err != nil {
+		return err
 	}
 
 	numberAndId := [8]byte{}
@@ -283,10 +287,9 @@ func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uin
 func (this *StorageBoltDb) StoreAccountPack(context interface{}, index uint32, data []byte) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tablePack
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tablePack)
+	if err != nil {
+		return err
 	}
 
 	dataCopy := make([]byte, len(data))
@@ -299,10 +302,9 @@ func (this *StorageBoltDb) StoreAccountPack(context interface{}, index uint32, d
 func (this *StorageBoltDb) StorePeers(context interface{}, peers func(func(address []byte, data []byte))) (err error) {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tablePeers
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tablePeers)
+	if err != nil {
+		return err
 	}
 
 	peers(func(address []byte, data []byte) {
@@ -334,10 +336,9 @@ func (this *StorageBoltDb) LoadPeers(peers func(address []byte, data []byte)) er
 func (this *StorageBoltDb) DropSnapshot(context interface{}, height uint32) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableSnapshots
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableSnapshots)
+	if err != nil {
+		return err
 	}
 
 	var buffer [4]byte
@@ -392,10 +393,9 @@ func (this *StorageBoltDb) LoadSnapshot(height uint32) (serialized []byte) {
 func (this *StorageBoltDb) StoreSnapshot(context interface{}, height uint32, serialized []byte) error {
 	tx := context.(*bolt.Tx)
 
-	var bucket *bolt.Bucket
-	tableName := tableSnapshots
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableSnapshots)
+	if err != nil {
+		return err
 	}
 
 	var buffer [4]byte
@@ -427,9 +427,9 @@ func (this *StorageBoltDb) GetBlock(index uint32) (data []byte, err error) {
 func (this *StorageBoltDb) getTxId(tx *bolt.Tx, txRipemd160Hash [20]byte) (uint64, error) {
 	var bucket *bolt.Bucket
 
-	tableName := tableTx
-	if bucket = tx.Bucket([]byte(tableName)); bucket == nil {
-		return 0, fmt.Errorf("Table doesn't exist %s", tableName)
+	bucket, err := this.getTable(tx, tableTx)
+	if err != nil {
+		return 0, err
 	}
 
 	if txIdBuffer := bucket.Get(txRipemd160Hash[:]); txIdBuffer != nil {
@@ -438,11 +438,10 @@ func (this *StorageBoltDb) getTxId(tx *bolt.Tx, txRipemd160Hash [20]byte) (uint6
 	return 0, fmt.Errorf("Failed to get tx id by hash %x", txRipemd160Hash)
 }
 
-func (this *StorageBoltDb) getTxMetadata(boltTx *bolt.Tx, txId uint64) (metadata []byte, err error) {
-	var bucket *bolt.Bucket
-	tableName := tableTxMetadata
-	if bucket = boltTx.Bucket([]byte(tableName)); bucket == nil {
-		return nil, fmt.Errorf("Table doesn't exist %s", tableName)
+func (this *StorageBoltDb) getTxMetadata(tx *bolt.Tx, txId uint64) (metadata []byte, err error) {
+	bucket, err := this.getTable(tx, tableTxMetadata)
+	if err != nil {
+		return nil, err
 	}
 
 	txIdBuffer := [8]byte{}

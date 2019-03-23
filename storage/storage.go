@@ -267,7 +267,7 @@ func (this *StorageBoltDb) StoreTxMetadata(context interface{}, txID uint64, txM
 	return bucket.Put(buffer.Bytes(), txMetadataCopy)
 }
 
-func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error {
+func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txID uint64) error {
 	tx := context.(*bolt.Tx)
 
 	bucket, err := this.getTable(tx, tableAccountTx)
@@ -278,9 +278,8 @@ func (this *StorageBoltDb) StoreAccountOperation(context interface{}, number uin
 	numberAndId := [8]byte{}
 	binary.BigEndian.PutUint32(numberAndId[0:4], number)
 	binary.BigEndian.PutUint32(numberAndId[4:8], internalOperationId)
-	txId = uint64(bucket.Stats().KeyN)
 	buffer := [8]byte{}
-	binary.BigEndian.PutUint64(buffer[:], txId)
+	binary.BigEndian.PutUint64(buffer[:], txID)
 	return bucket.Put(numberAndId[:], buffer[:])
 }
 

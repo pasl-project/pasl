@@ -45,11 +45,12 @@ var (
 )
 
 type Blockchain struct {
-	txPool  sync.Map
-	storage storage.Storage
-	safebox *safebox.Safebox
-	lock    sync.RWMutex
-	target  common.TargetBase
+	txPool              sync.Map
+	storage             storage.Storage
+	safebox             *safebox.Safebox
+	lock                sync.RWMutex
+	target              common.TargetBase
+	blocksSinceSnapshot uint32
 }
 
 type blockInfo struct {
@@ -118,9 +119,10 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 	nextTarget := safeboxInstance.GetFork().GetNextTarget(target, safeboxInstance.GetLastTimestamps)
 
 	blockchain := &Blockchain{
-		storage: s,
-		safebox: safeboxInstance,
-		target:  common.NewTarget(nextTarget),
+		storage:             s,
+		safebox:             safeboxInstance,
+		target:              common.NewTarget(nextTarget),
+		blocksSinceSnapshot: 0,
 	}
 
 	return blockchain
@@ -293,8 +295,10 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 			}
 		}
 
-		height, _, _ := currentSafebox.GetState()
-		if height%(defaults.MaxAltChainLength/2) == 0 {
+		this.blocksSinceSnapshot += uint32(len(affectedByBlocks))
+		if this.blocksSinceSnapshot > defaults.MaxAltChainLength/2 {
+			height, _, _ := currentSafebox.GetState()
+
 			for _, snapshotHeight := range this.storage.ListSnapshots() {
 				if snapshotHeight+defaults.MaxAltChainLength < height {
 					s.DropSnapshot(ctx, snapshotHeight)
@@ -308,6 +312,8 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 			} else {
 				return fmt.Errorf("failed to serialize accounter")
 			}
+
+			this.blocksSinceSnapshot = 0
 		}
 
 		return nil
@@ -345,16 +351,23 @@ func (this Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error)
 }
 
 func (this Blockchain) LoadNearestSnapshot(targetHeight uint32) (*accounter.Accounter, error) {
-	for _, height := range this.storage.ListSnapshots() {
-		if height > targetHeight {
+	found := false
+	height := uint32(0)
+	for _, snapshotHeight := range this.storage.ListSnapshots() {
+		if snapshotHeight > targetHeight {
 			continue
 		}
-		if height+defaults.MaxAltChainLength < targetHeight {
-			continue
+		if !found || snapshotHeight > height {
+			found = true
+			height = snapshotHeight
 		}
-		return this.LoadSnapshot(height)
 	}
-	return nil, fmt.Errorf("no matching snapshots")
+
+	if !found {
+		return nil, fmt.Errorf("no matching snapshots")
+	}
+
+	return this.LoadSnapshot(height)
 }
 
 func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) error {

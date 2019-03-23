@@ -136,7 +136,7 @@ func NewBlock(meta *BlockMetadata) (BlockBase, error) {
 		Accounts:       make([]accounter.Account, 5),
 	}
 	for i := uint32(0); i < uint32(len(block.Accounts)); i++ {
-		block.Accounts[i] = accounter.NewAccount(i+block.GetIndex(), block.GetMiner(), 0, block.GetIndex(), 0, 0)
+		block.Accounts[i] = accounter.NewAccount(i+block.GetIndex(), block.GetMiner(), 0, block.GetIndex(), 0, 0, 0)
 	}
 
 	block.Hash = block.GetHash()

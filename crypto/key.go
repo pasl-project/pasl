@@ -147,7 +147,7 @@ func (this *Public) Deserialize(r io.Reader) error {
 	if err := utils.Deserialize(&serialized, r); err != nil {
 		return err
 	}
-	return PublicFromSerialized(this, &serialized)
+	return PublicFromSerialized(this, serialized.TypeId, serialized.X, serialized.Y)
 }
 
 func (this *Public) Serialized() PublicSerialized {
@@ -170,24 +170,22 @@ func (this *Public) SerializedPlain() PublicSerializedPlain {
 	}
 }
 
-func PublicFromSerialized(public *Public, serialized *PublicSerialized) error {
-	curve, err := CurveById(serialized.TypeId)
+func PublicFromSerialized(public *Public, typeID uint16, x []byte, y []byte) error {
+	curve, err := CurveById(typeID)
 	if err != nil {
 		return err
 	}
 
-	x := &big.Int{}
-	x.SetBytes(serialized.X)
-	y := &big.Int{}
-	y.SetBytes(serialized.Y)
-	if !curve.IsOnCurve(x, y) {
+	X := big.NewInt(0).SetBytes(x)
+	Y := big.NewInt(0).SetBytes(y)
+	if !curve.IsOnCurve(X, Y) {
 		return errors.New("Is not on curve")
 	}
 
-	public.TypeId = serialized.TypeId
+	public.TypeId = typeID
 	public.Curve = curve
-	public.X = x
-	public.Y = y
+	public.X = X
+	public.Y = Y
 	return nil
 }
 
@@ -202,7 +200,7 @@ func NewPublic(data []byte) (*Public, error) {
 	}
 
 	var public Public
-	if err := PublicFromSerialized(&public, &serialized); err != nil {
+	if err := PublicFromSerialized(&public, serialized.TypeId, serialized.X, serialized.Y); err != nil {
 		return nil, err
 	}
 

@@ -22,13 +22,11 @@ package accounter
 import (
 	"bytes"
 	"crypto/sha256"
-	"io"
 	"math/big"
 	"sync"
 
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
-	"github.com/pasl-project/pasl/utils"
 )
 
 type Accounter struct {
@@ -170,11 +168,11 @@ func (this *Accounter) GetAccountPack(number uint32) uint32 {
 	return this.getPackContainingAccountUnsafe(number).GetIndex()
 }
 
-func (this *Accounter) GetAccountPackSerialized(index uint32) []byte {
+func (this *Accounter) GetAccountPackSerialized(index uint32) ([]byte, error) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return utils.Serialize(&this.packs[index])
+	return this.packs[index].Marshal()
 }
 
 func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
@@ -243,25 +241,35 @@ func (this *Accounter) KeyChange(number uint32, key *crypto.Public, index uint32
 	account.updatedIndex = index
 }
 
-func (this *Accounter) Serialize(w io.Writer) error {
-	this.lock.RLock()
-	defer this.lock.RUnlock()
+func (a Accounter) Marshal() ([]byte, error) {
+	a.lock.RLock()
+	defer a.lock.RUnlock()
 
-	_, err := w.Write(utils.Serialize(accounterSerialized{
-		Packs: this.packs,
-	}))
-	return err
+	packs := make([]*PackPod, len(a.packs))
+	for each := range packs {
+		packs[each] = a.packs[each].Pod()
+	}
+
+	pod := &AccounterPod{
+		Packs: packs,
+	}
+	return pod.MarshalBinary()
 }
 
-func (this *Accounter) Deserialize(r io.Reader) error {
-	this.lock.RLock()
-	defer this.lock.RUnlock()
-
-	var unpacked accounterSerialized
-	if err := utils.Deserialize(&unpacked, r); err != nil {
-		return err
+func (a *Accounter) Unmarshal(data []byte) (int, error) {
+	pod := AccounterPod{}
+	size, err := pod.Unmarshal(data)
+	if err != nil {
+		return 0, err
 	}
-	this.packs = unpacked.Packs
-	this.dirty = nil
-	return nil
+
+	a.dirty = nil
+	a.packs = make([]PackBase, len(pod.Packs))
+	for each := range a.packs {
+		p := PackBase{}
+		p.FromPod(*pod.Packs[each])
+		a.packs[each] = p
+	}
+
+	return size, nil
 }

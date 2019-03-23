@@ -131,7 +131,8 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topBlock *safebox.BlockMetadata, err error) {
 	height, err := storage.Load(func(index uint32, data []byte) error {
 		var pack accounter.PackBase
-		if err := utils.Deserialize(&pack, bytes.NewBuffer(data)); err != nil {
+		_, err := pack.Unmarshal(data)
+		if err != nil {
 			return err
 		}
 		accounterInstance.AppendPack(pack)
@@ -257,7 +258,11 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 
 	err := this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
 		for packIndex := range updatedPacksTotal {
-			if err := s.StoreAccountPack(ctx, packIndex, currentSafebox.GetAccountPackSerialized(packIndex)); err != nil {
+			data, err := currentSafebox.GetAccountPackSerialized(packIndex)
+			if err != nil {
+				return err
+			}
+			if err := s.StoreAccountPack(ctx, packIndex, data); err != nil {
 				return err
 			}
 		}
@@ -305,12 +310,13 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 				}
 			}
 
-			if buffer := currentSafebox.SerializeAccounter(); buffer != nil {
+			buffer, err := currentSafebox.SerializeAccounter()
+			if err == nil {
 				if err := s.StoreSnapshot(ctx, height, buffer); err != nil {
 					return err
 				}
 			} else {
-				return fmt.Errorf("failed to serialize accounter")
+				return fmt.Errorf("failed to serialize accounter: %v", err)
 			}
 
 			this.blocksSinceSnapshot = 0
@@ -344,7 +350,8 @@ func (this Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error)
 		return nil, fmt.Errorf("failed to load snapshot %d", height)
 	}
 	snapshot := accounter.NewAccounter()
-	if err := snapshot.Deserialize(bytes.NewBuffer(buffer)); err != nil {
+	_, err := snapshot.Unmarshal(buffer)
+	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize snapshot %d", height)
 	}
 	return snapshot, nil
@@ -434,7 +441,11 @@ func (this *Blockchain) flushPacks(updatedPacks map[uint32]struct{}) error {
 
 	return this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
 		for packIndex := range updatedPacks {
-			if err := s.StoreAccountPack(ctx, packIndex, this.safebox.GetAccountPackSerialized(packIndex)); err != nil {
+			data, err := this.safebox.GetAccountPackSerialized(packIndex)
+			if err != nil {
+				return err
+			}
+			if err := s.StoreAccountPack(ctx, packIndex, data); err != nil {
 				return err
 			}
 		}

@@ -20,10 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package accounter
 
 import (
-	"io"
-
 	"github.com/pasl-project/pasl/crypto"
-	"github.com/pasl-project/pasl/utils"
 )
 
 type Account struct {
@@ -36,16 +33,6 @@ type Account struct {
 	timestamp       uint32
 }
 
-type accountSerialized struct {
-	Number          uint32
-	PublicKey       crypto.PublicSerialized
-	Balance         uint64
-	UpdatedIndex    uint32
-	Operations      uint32
-	OperationsTotal uint32
-	Timestamp       uint32
-}
-
 type AccountHashBuffer struct {
 	Number       uint32
 	PublicKey    crypto.Public
@@ -54,7 +41,7 @@ type AccountHashBuffer struct {
 	Operations   uint32
 }
 
-func NewAccount(number uint32, publicKey *crypto.Public, balance uint64, updatedIndex uint32, operationsCount uint32, operationsTotal uint32) Account {
+func NewAccount(number uint32, publicKey *crypto.Public, balance uint64, updatedIndex uint32, operationsCount uint32, operationsTotal uint32, timestamp uint32) Account {
 	return Account{
 		number:          number,
 		publicKey:       *publicKey,
@@ -62,6 +49,7 @@ func NewAccount(number uint32, publicKey *crypto.Public, balance uint64, updated
 		updatedIndex:    updatedIndex,
 		operations:      operationsCount,
 		operationsTotal: operationsTotal,
+		timestamp:       timestamp,
 	}
 }
 
@@ -107,33 +95,43 @@ func (this *Account) IsPublicKeyEqual(other *crypto.Public) bool {
 	return this.publicKey.Equal(other)
 }
 
-func (this *Account) Serialize(w io.Writer) error {
-	_, err := w.Write(utils.Serialize(utils.Serialize(accountSerialized{
-		Number:          this.number,
-		PublicKey:       this.publicKey.Serialized(),
+func (a *Account) FromPod(pod AccountPod) {
+	a.number = pod.Number
+	crypto.PublicFromSerialized(&a.publicKey, pod.PublicKey.TypeId, pod.PublicKey.X, pod.PublicKey.Y)
+	a.balance = pod.Balance
+	a.updatedIndex = pod.UpdatedIndex
+	a.operations = pod.Operations
+	a.operationsTotal = pod.OperationsTotal
+	a.timestamp = pod.Timestamp
+}
+
+func (this Account) Pod() *AccountPod {
+	return &AccountPod{
+		Number: this.number,
+		PublicKey: &PublicPod{
+			TypeId: this.publicKey.TypeId,
+			X:      this.publicKey.X.Bytes(),
+			Y:      this.publicKey.Y.Bytes(),
+		},
 		Balance:         this.balance,
 		UpdatedIndex:    this.updatedIndex,
 		Operations:      this.operations,
 		OperationsTotal: this.operationsTotal,
 		Timestamp:       this.timestamp,
-	})))
-
-	return err
+	}
 }
 
-func (this *Account) Deserialize(r io.Reader) error {
-	var unpacked accountSerialized
-	if err := utils.Deserialize(&unpacked, r); err != nil {
-		return err
+func (this Account) Marshal() ([]byte, error) {
+	return this.Pod().MarshalBinary()
+}
+
+func (this *Account) Unmarshal(data []byte) (int, error) {
+	pod := AccountPod{}
+	size, err := pod.Unmarshal(data)
+	if err != nil {
+		return 0, err
 	}
 
-	this.number = unpacked.Number
-	crypto.PublicFromSerialized(&this.publicKey, &unpacked.PublicKey)
-	this.balance = unpacked.Balance
-	this.updatedIndex = unpacked.UpdatedIndex
-	this.operations = unpacked.Operations
-	this.operationsTotal = unpacked.OperationsTotal
-	this.timestamp = unpacked.Timestamp
-
-	return nil
+	this.FromPod(pod)
+	return size, nil
 }

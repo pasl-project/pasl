@@ -23,7 +23,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"io"
 	"math/big"
 
 	"github.com/pasl-project/pasl/crypto"
@@ -35,7 +34,7 @@ type PackBase struct {
 	accounts             []Account
 	cumulativeDifficulty *big.Int
 	dirty                bool
-	hash                 [32]byte
+	hash                 [sha256.Size]byte
 	index                uint32
 }
 
@@ -43,7 +42,7 @@ type packSerialized struct {
 	Accounts             []Account
 	CumulativeDifficulty []byte
 	Dirty                bool
-	Hash                 [32]byte
+	Hash                 [sha256.Size]byte
 	Index                uint32
 }
 
@@ -62,15 +61,7 @@ func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i := range accounts {
-		accounts[i] = Account{
-			number:          number,
-			publicKey:       *miner,
-			balance:         0,
-			updatedIndex:    index,
-			operations:      0,
-			operationsTotal: 0,
-			timestamp:       timestamp,
-		}
+		accounts[i] = NewAccount(number, miner, 0, index, 0, 0, timestamp)
 		number++
 	}
 	accounts[0].balance = reward
@@ -119,26 +110,47 @@ func (this *PackBase) MarkDirty() {
 	this.dirty = true
 }
 
-func (this *PackBase) Serialize(w io.Writer) error {
-	_, err := w.Write(utils.Serialize(utils.Serialize(packSerialized{
-		Accounts:             this.accounts,
-		CumulativeDifficulty: this.cumulativeDifficulty.Bytes(),
-		Dirty:                this.dirty,
-		Hash:                 this.hash,
-		Index:                this.index,
-	})))
-	return err
+func (p *PackBase) FromPod(pod PackPod) {
+	accounts := make([]Account, len(pod.Accounts))
+	for each := range accounts {
+		a := Account{}
+		a.FromPod(*pod.Accounts[each])
+		accounts[each] = a
+	}
+
+	p.accounts = accounts
+	p.cumulativeDifficulty = big.NewInt(0).SetBytes(pod.CumulativeDifficulty)
+	p.dirty = pod.Dirty
+	p.index = pod.Index
+	copy(p.hash[:sha256.Size], pod.Hash[:sha256.Size])
 }
 
-func (this *PackBase) Deserialize(r io.Reader) error {
-	var unpacked packSerialized
-	if err := utils.Deserialize(&unpacked, r); err != nil {
-		return err
+func (this *PackBase) Pod() *PackPod {
+	accounts := make([]*AccountPod, len(this.accounts))
+	for each := range accounts {
+		accounts[each] = this.accounts[each].Pod()
 	}
-	this.accounts = unpacked.Accounts
-	this.cumulativeDifficulty = big.NewInt(0).SetBytes(unpacked.CumulativeDifficulty)
-	this.dirty = unpacked.Dirty
-	this.hash = unpacked.Hash
-	this.index = unpacked.Index
-	return nil
+
+	return &PackPod{
+		Accounts:             accounts,
+		CumulativeDifficulty: this.cumulativeDifficulty.Bytes(),
+		Dirty:                this.dirty,
+		Hash:                 this.hash[:],
+		Index:                this.index,
+	}
+}
+
+func (p PackBase) Marshal() ([]byte, error) {
+	return p.Pod().MarshalBinary()
+}
+
+func (p *PackBase) Unmarshal(data []byte) (int, error) {
+	pod := PackPod{}
+	size, err := pod.Unmarshal(data)
+	if err != nil {
+		return 0, err
+	}
+
+	p.FromPod(pod)
+	return size, nil
 }

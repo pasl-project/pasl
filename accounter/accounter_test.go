@@ -36,15 +36,33 @@ func TestSerialize(t *testing.T) {
 	accounter := NewAccounter()
 	accounter.NewPack(key.Public, 1, 2, big.NewInt(3))
 
-	buffer := bytes.NewBuffer(nil)
-	if err := accounter.Serialize(buffer); err != nil {
+	buffer, err := accounter.Marshal()
+	if err != nil {
 		t.FailNow()
 	}
 
 	other := NewAccounter()
-	if other.Deserialize(buffer) != nil {
+	if _, err = other.Unmarshal(buffer); err != nil {
 		t.FailNow()
 	}
+
+	_, hash, _ := accounter.GetState()
+	_, hash2, _ := other.GetState()
+	if !bytes.Equal(hash, hash2) {
+		t.FailNow()
+	}
+}
+
+func TestCopy(t *testing.T) {
+	key, err := crypto.NewKey(crypto.NIDsecp256k1)
+	if err != nil {
+		t.FailNow()
+	}
+
+	accounter := NewAccounter()
+	accounter.NewPack(key.Public, 1, 2, big.NewInt(3))
+
+	other := accounter.Copy()
 
 	_, hash, _ := accounter.GetState()
 	_, hash2, _ := other.GetState()

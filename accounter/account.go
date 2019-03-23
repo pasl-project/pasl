@@ -97,7 +97,7 @@ func (this *Account) IsPublicKeyEqual(other *crypto.Public) bool {
 
 func (a *Account) FromPod(pod AccountPod) {
 	a.number = pod.Number
-	crypto.PublicFromSerialized(&a.publicKey, pod.PublicKey.TypeId, pod.PublicKey.X, pod.PublicKey.Y)
+	crypto.PublicFromSerialized(&a.publicKey, pod.PublicKey.TypeID, pod.PublicKey.X, pod.PublicKey.Y)
 	a.balance = pod.Balance
 	a.updatedIndex = pod.UpdatedIndex
 	a.operations = pod.Operations
@@ -109,7 +109,7 @@ func (this Account) Pod() *AccountPod {
 	return &AccountPod{
 		Number: this.number,
 		PublicKey: &PublicPod{
-			TypeId: this.publicKey.TypeId,
+			TypeID: this.publicKey.TypeId,
 			X:      this.publicKey.X.Bytes(),
 			Y:      this.publicKey.Y.Bytes(),
 		},

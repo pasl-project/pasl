@@ -14,7 +14,7 @@ var intconv = binary.BigEndian
 // Colfer configuration attributes
 var (
 	// ColferSizeMax is the upper limit for serial byte sizes.
-	ColferSizeMax = 16 * 1024 * 1024
+	ColferSizeMax = 1024 * 1024 * 1024
 	// ColferListMax is the upper limit for the number of elements in a list.
 	ColferListMax = 64 * 1024
 )
@@ -42,7 +42,7 @@ func (i ColferTail) Error() string {
 }
 
 type PublicPod struct {
-	TypeId uint16
+	TypeID uint16
 
 	X []byte
 
@@ -54,7 +54,7 @@ type PublicPod struct {
 func (o *PublicPod) MarshalTo(buf []byte) int {
 	var i int
 
-	if x := o.TypeId; x >= 1<<8 {
+	if x := o.TypeID; x >= 1<<8 {
 		buf[i] = 0
 		i++
 		buf[i] = byte(x >> 8)
@@ -106,7 +106,7 @@ func (o *PublicPod) MarshalTo(buf []byte) int {
 func (o *PublicPod) MarshalLen() (int, error) {
 	l := 1
 
-	if x := o.TypeId; x >= 1<<8 {
+	if x := o.TypeID; x >= 1<<8 {
 		l += 3
 	} else if x != 0 {
 		l += 2
@@ -163,7 +163,7 @@ func (o *PublicPod) Unmarshal(data []byte) (int, error) {
 		if i >= len(data) {
 			goto eof
 		}
-		o.TypeId = intconv.Uint16(data[start:])
+		o.TypeID = intconv.Uint16(data[start:])
 		header = data[i]
 		i++
 	} else if header == 0|0x80 {
@@ -172,7 +172,7 @@ func (o *PublicPod) Unmarshal(data []byte) (int, error) {
 		if i >= len(data) {
 			goto eof
 		}
-		o.TypeId = uint16(data[start])
+		o.TypeID = uint16(data[start])
 		header = data[i]
 		i++
 	}

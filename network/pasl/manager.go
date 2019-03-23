@@ -189,30 +189,28 @@ func (this *manager) sync(ctx context.Context) bool {
 		blocks := conn.BlocksGet(nodeHeight, to)
 		nodeHeight += uint32(len(blocks))
 
-		for index := range blocks {
-			switch err := this.blockchain.ProcessNewBlock(blocks[index]); err {
-			case nil:
-				{
-					continue
-				}
-			case blockchain.ErrParentNotFound:
-				{
-					utils.Tracef("[P2P %s] Block #%d parent not found. Downloading alternate chain", conn.logPrefix, blocks[index].Header.Index)
+		switch err := this.blockchain.ProcessNewBlocks(blocks, nil); err {
+		case nil:
+			{
+				continue
+			}
+		case blockchain.ErrParentNotFound:
+			{
+				utils.Tracef("[P2P %s] Fetching alternate chain", conn.logPrefix)
 
-					from := utils.MaxUint32(blocks[index].Header.Index, defaults.MaxAltChainLength) - defaults.MaxAltChainLength
-					blocks := conn.BlocksGet(from, blocks[index].Header.Index)
+				from := utils.MaxUint32(blocks[0].Header.Index, defaults.MaxAltChainLength) - defaults.MaxAltChainLength
+				blocks := conn.BlocksGet(from, to)
 
-					if err := this.blockchain.AddAlternateChain(blocks); err != nil {
-						utils.Tracef("[P2P %s] Failed to switch to alternate chain: %v", conn.logPrefix, err)
-						return false
-					}
-					utils.Tracef("[P2P %s] Switched to alternate chain", conn.logPrefix)
-				}
-			default:
-				{
-					utils.Tracef("[P2P %s] Block #%d verification failed %v", conn.logPrefix, blocks[index].Header.Index, err)
+				if err := this.blockchain.AddAlternateChain(blocks); err != nil {
+					utils.Tracef("[P2P %s] Failed to switch to alternate chain: %v", conn.logPrefix, err)
 					return false
 				}
+				utils.Tracef("[P2P %s] Switched to alternate chain", conn.logPrefix)
+			}
+		default:
+			{
+				utils.Tracef("[P2P %s] Verification failed %v", conn.logPrefix, err)
+				return false
 			}
 		}
 

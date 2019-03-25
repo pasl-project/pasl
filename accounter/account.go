@@ -105,7 +105,7 @@ func (a *Account) FromPod(pod AccountPod) {
 	a.timestamp = pod.Timestamp
 }
 
-func (this Account) Pod() *AccountPod {
+func (this *Account) Pod() *AccountPod {
 	return &AccountPod{
 		Number: this.number,
 		PublicKey: &PublicPod{
@@ -121,7 +121,7 @@ func (this Account) Pod() *AccountPod {
 	}
 }
 
-func (this Account) Marshal() ([]byte, error) {
+func (this *Account) Marshal() ([]byte, error) {
 	return this.Pod().MarshalBinary()
 }
 

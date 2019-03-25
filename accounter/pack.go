@@ -140,7 +140,7 @@ func (this *PackBase) Pod() *PackPod {
 	}
 }
 
-func (p PackBase) Marshal() ([]byte, error) {
+func (p *PackBase) Marshal() ([]byte, error) {
 	return p.Pod().MarshalBinary()
 }
 

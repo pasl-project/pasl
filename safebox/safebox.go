@@ -98,14 +98,14 @@ func (this *Safebox) Validate(operation *tx.Tx) error {
 	return err
 }
 
-func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
+func (this *Safebox) validateSignatures(operations []tx.Tx) error {
 	wg := &sync.WaitGroup{}
 	invalid := uint32(0)
-	wg.Add(len(*operations))
-	for index := range *operations {
+	wg.Add(len(operations))
+	for index := range operations {
 		go func(index int) {
 			defer wg.Done()
-			if (*operations)[index].ValidateSignature() != nil {
+			if operations[index].ValidateSignature() != nil {
 				atomic.StoreUint32(&invalid, 1)
 			}
 		}(index)
@@ -117,7 +117,7 @@ func (this *Safebox) validateSignatures(operations *[]tx.Tx) error {
 	return nil
 }
 
-func (this Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -144,7 +144,7 @@ func (this Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, op
 		return nil
 	}
 
-	if err := this.validateSignatures(&operations); err != nil {
+	if err := this.validateSignatures(operations); err != nil {
 		return nil, nil, nil, err
 	}
 

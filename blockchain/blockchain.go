@@ -97,7 +97,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		if err != nil {
 			return err
 		}
-		newSafebox, newTarget, updatedPacks, _, err := blockchain.addBlock(*blockchain.safebox, blockchain.target, block)
+		newSafebox, newTarget, updatedPacks, _, err := blockchain.addBlock(blockchain.safebox, blockchain.target, block)
 		blockchain.safebox = newSafebox
 		blockchain.target = newTarget
 		for packIndex := range updatedPacks {
@@ -163,7 +163,7 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (Blockchain) addBlock(currentSafebox safebox.Safebox, target common.TargetBase, block safebox.BlockBase) (*safebox.Safebox, common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (*Blockchain) addBlock(currentSafebox *safebox.Safebox, target common.TargetBase, block safebox.BlockBase) (*safebox.Safebox, common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	if block.GetTimestamp() > uint32(time.Now().Unix())+defaults.MaxBlockTimeOffset {
 		return nil, nil, nil, nil, ErrFutureTimestamp
 	}
@@ -234,7 +234,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		}
 		blocksProcessed = append(blocksProcessed, block)
 
-		newSafebox, newTarget, updatedPacks, affectedByTx, err := this.addBlock(*currentSafebox, currentTarget, block)
+		newSafebox, newTarget, updatedPacks, affectedByTx, err := this.addBlock(currentSafebox, currentTarget, block)
 		if err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ func (this *Blockchain) ProcessNewBlock(block safebox.SerializedBlock) error {
 	return this.ProcessNewBlocks([]safebox.SerializedBlock{block}, nil)
 }
 
-func (this Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error) {
+func (this *Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error) {
 	buffer := this.storage.LoadSnapshot(height)
 	if buffer == nil {
 		return nil, fmt.Errorf("failed to load snapshot %d", height)
@@ -357,7 +357,7 @@ func (this Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error)
 	return snapshot, nil
 }
 
-func (this Blockchain) LoadNearestSnapshot(targetHeight uint32) (*accounter.Accounter, error) {
+func (this *Blockchain) LoadNearestSnapshot(targetHeight uint32) (*accounter.Accounter, error) {
 	found := false
 	height := uint32(0)
 	for _, snapshotHeight := range this.storage.ListSnapshots() {
@@ -399,7 +399,7 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	currentTarget := newBlockchain.target
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
 		block := this.GetBlock(index)
-		newSafebox, newTarget, _, _, err := this.addBlock(*currentSafebox, currentTarget, block)
+		newSafebox, newTarget, _, _, err := this.addBlock(currentSafebox, currentTarget, block)
 		if err != nil {
 			return err
 		}

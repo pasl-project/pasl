@@ -304,10 +304,10 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		if this.blocksSinceSnapshot > defaults.MaxAltChainLength/2 {
 			height, _, _ := currentSafebox.GetState()
 
-			for _, snapshotHeight := range this.storage.ListSnapshots() {
-				if snapshotHeight+defaults.MaxAltChainLength < height {
-					s.DropSnapshot(ctx, snapshotHeight)
-				}
+			snapshots := this.storage.ListSnapshots()
+			sort.Slice(snapshots, func(i, j int) bool { return snapshots[i] > snapshots[j] })
+			for index := 1; index < len(snapshots); index++ {
+				s.DropSnapshot(ctx, snapshots[index])
 			}
 
 			buffer, err := currentSafebox.SerializeAccounter()

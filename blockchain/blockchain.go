@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"sync"
 	"time"
 
@@ -97,8 +98,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		if err != nil {
 			return err
 		}
-		newSafebox, newTarget, updatedPacks, _, err := blockchain.addBlock(blockchain.safebox, blockchain.target, block)
-		blockchain.safebox = newSafebox
+		newTarget, updatedPacks, _, err := blockchain.addBlock(blockchain.safebox, blockchain.target, block)
 		blockchain.target = newTarget
 		for packIndex := range updatedPacks {
 			packs[packIndex] = struct{}{}
@@ -107,6 +107,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 	}); err != nil {
 		return nil, err
 	}
+	blockchain.safebox.Merge()
 	if restore {
 		blockchain.flushPacks(packs)
 	}
@@ -163,50 +164,43 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (*Blockchain) addBlock(currentSafebox *safebox.Safebox, target common.TargetBase, block safebox.BlockBase) (*safebox.Safebox, common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (*Blockchain) addBlock(currentSafebox *safebox.Safebox, target common.TargetBase, block safebox.BlockBase) (common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	if block.GetTimestamp() > uint32(time.Now().Unix())+defaults.MaxBlockTimeOffset {
-		return nil, nil, nil, nil, ErrFutureTimestamp
+		return nil, nil, nil, ErrFutureTimestamp
 	}
 
 	// TODO: check block hash for genesis block
 	height, safeboxHash, _ := currentSafebox.GetState()
 	if height != block.GetIndex() {
-		return nil, nil, nil, nil, ErrInvalidOrder
+		return nil, nil, nil, ErrInvalidOrder
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
 		utils.Tracef("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
-		return nil, nil, nil, nil, ErrParentNotFound
+		return nil, nil, nil, ErrParentNotFound
 	}
 
 	lastTimestamps := currentSafebox.GetLastTimestamps(1)
 	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return nil, nil, nil, nil, errors.New("Invalid timestamp")
+		return nil, nil, nil, errors.New("Invalid timestamp")
 	}
 	if err := currentSafebox.GetFork().CheckBlock(target, block); err != nil {
-		return nil, nil, nil, nil, errors.New("Invalid block: " + err.Error())
+		return nil, nil, nil, errors.New("Invalid block: " + err.Error())
 	}
 
-	newSafebox, updatedPacks, affectedByTx, err := currentSafebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
+	updatedPacks, affectedByTx, err := currentSafebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	newHeight := height + 1
 	newTarget := target
 	if fork := safebox.TryActivateFork(newHeight, block.GetPrevSafeBoxHash()); fork != nil {
 		newTarget = block.GetTarget()
-		newSafebox.SetFork(fork)
+		currentSafebox.SetFork(fork)
 	}
-	newTarget = common.NewTarget(newSafebox.GetFork().GetNextTarget(newTarget, newSafebox.GetLastTimestamps))
+	newTarget = common.NewTarget(currentSafebox.GetFork().GetNextTarget(newTarget, currentSafebox.GetLastTimestamps))
 
-	return newSafebox, newTarget, updatedPacks, affectedByTx, nil
-}
-
-func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
-	this.lock.Lock()
-	defer this.lock.Unlock()
-
-	return this.processNewBlocksUnsafe(blocks, preSave)
+	return newTarget, updatedPacks, affectedByTx, nil
 }
 
 func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
@@ -234,11 +228,10 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		}
 		blocksProcessed = append(blocksProcessed, block)
 
-		newSafebox, newTarget, updatedPacks, affectedByTx, err := this.addBlock(currentSafebox, currentTarget, block)
+		newTarget, updatedPacks, affectedByTx, err := this.addBlock(currentSafebox, currentTarget, block)
 		if err != nil {
 			return err
 		}
-		currentSafebox = newSafebox
 		currentTarget = newTarget
 
 		for pack := range updatedPacks {
@@ -340,6 +333,18 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	return nil
 }
 
+func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
+	if err := this.processNewBlocksUnsafe(blocks, preSave); err != nil {
+		this.safebox.Rollback()
+		return err
+	}
+	this.safebox.Merge()
+	return nil
+}
+
 func (this *Blockchain) ProcessNewBlock(block safebox.SerializedBlock) error {
 	return this.ProcessNewBlocks([]safebox.SerializedBlock{block}, nil)
 }
@@ -399,11 +404,10 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	currentTarget := newBlockchain.target
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
 		block := this.GetBlock(index)
-		newSafebox, newTarget, _, _, err := this.addBlock(currentSafebox, currentTarget, block)
+		newTarget, _, _, err := this.addBlock(currentSafebox, currentTarget, block)
 		if err != nil {
 			return err
 		}
-		currentSafebox = newSafebox
 		currentTarget = newTarget
 	}
 	newBlockchain.safebox = currentSafebox

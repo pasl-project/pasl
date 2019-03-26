@@ -117,25 +117,33 @@ func (this *Safebox) validateSignatures(operations []tx.Tx) error {
 	return nil
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (*Safebox, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (s *Safebox) Merge() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.accounter.Merge()
+}
+
+func (s *Safebox) Rollback() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.accounter.Rollback()
+}
+
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	newSafebox := &Safebox{
-		accounter: this.accounter.Copy(),
-		fork:      this.fork,
-	}
-
-	newHeight, _, _ := newSafebox.GetState()
-	reward := getReward(newHeight)
+	currentHeight, _, _ := this.getStateUnsafe()
+	reward := getReward(currentHeight)
 	for index := range operations {
 		reward += operations[index].GetFee()
 	}
-	newPack := newSafebox.accounter.NewPack(miner, reward, timestamp, difficulty)
+	newPack := this.accounter.NewPack(miner, reward, timestamp, difficulty)
 	updatedPacks := make(map[uint32]struct{})
 	updatedPacks[newPack] = struct{}{}
 
-	currentHeight, _, _ := this.getStateUnsafe()
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight < currentHeight {
@@ -145,18 +153,18 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 	}
 
 	if err := this.validateSignatures(operations); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	affectedByTxes := make(map[*accounter.Account]map[uint32]uint32)
 	for index := range operations {
 		context, err := operations[index].Validate(getMaturedAccountUnsafe)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
-		accountsAffected, err := operations[index].Apply(currentHeight, context, &newSafebox.accounter)
+		accountsAffected, err := operations[index].Apply(currentHeight, context, &this.accounter)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		for _, number := range accountsAffected {
 			pack := this.accounter.GetAccountPack(number)
@@ -169,7 +177,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		}
 	}
 
-	return newSafebox, updatedPacks, affectedByTxes, nil
+	return updatedPacks, affectedByTxes, nil
 }
 
 func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {

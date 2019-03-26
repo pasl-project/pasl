@@ -27,14 +27,16 @@ import (
 
 	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/defaults"
+	"github.com/pasl-project/pasl/utils"
 )
 
 type Accounter struct {
-	dirty      map[uint32]struct{}
 	hash       []byte
 	hashBuffer []byte
 	lock       sync.RWMutex
-	packs      map[uint32]PackBase
+	packs      packsMap
+	updated    packsMap
+	dirty      map[uint32]struct{}
 }
 
 type accounterSerialized struct {
@@ -46,42 +48,25 @@ func NewAccounter() *Accounter {
 	copy(hash[:], defaults.GenesisSafeBox[:])
 
 	return &Accounter{
-		dirty:      make(map[uint32]struct{}),
 		hash:       hash,
 		hashBuffer: make([]byte, 0),
-		packs:      make(map[uint32]PackBase, 0),
+		packs:      newPacksMap(),
+		updated:    newPacksMap(),
+		dirty:      make(map[uint32]struct{}),
 	}
 }
 
-func (this Accounter) Copy() Accounter {
-	this.lock.RLock()
-	defer this.lock.RUnlock()
-
-	hash := make([]byte, sha256.Size)
-	copy(hash[:], this.hash)
-
-	hashBuffer := make([]byte, len(this.hashBuffer))
-	copy(hashBuffer[:], this.hashBuffer)
-
-	packs := make(map[uint32]PackBase, len(this.packs))
-	for each := range this.packs {
-		packs[each] = this.packs[each]
+func (this *Accounter) getMaxPack() *uint32 {
+	maxUpdated := this.updated.getMax()
+	maxPacks := this.packs.getMax()
+	if maxUpdated == nil {
+		return maxPacks
 	}
-
-	dirty := map[uint32]struct{}(nil)
-	if this.dirty != nil {
-		dirty = make(map[uint32]struct{})
-		for each := range this.dirty {
-			dirty[each] = struct{}{}
-		}
+	if maxPacks == nil {
+		return maxUpdated
 	}
-
-	return Accounter{
-		dirty:      dirty,
-		hash:       hash,
-		hashBuffer: hashBuffer,
-		packs:      packs,
-	}
+	max := utils.MaxUint32(*maxUpdated, *maxPacks)
+	return &max
 }
 
 func (this *Accounter) ToBlob() []byte {
@@ -89,42 +74,77 @@ func (this *Accounter) ToBlob() []byte {
 	defer this.lock.RUnlock()
 
 	result := bytes.NewBuffer([]byte(""))
-	for _, pack := range this.packs {
-		result.Write(pack.ToBlob())
-		result.Write(pack.GetHash())
+
+	maxPack := this.getMaxPack()
+	if maxPack != nil {
+		for packIndex := uint32(0); packIndex <= *maxPack; packIndex++ {
+			pack := this.getPackUnsafe(packIndex)
+			result.Write(pack.ToBlob())
+			result.Write(pack.GetHash())
+		}
 	}
 	return result.Bytes()
 }
 
-func (this *Accounter) getHashUnsafe() []byte {
-	if this.dirty == nil {
-		this.dirty = make(map[uint32]struct{})
-		this.hashBuffer = make([]byte, len(this.packs)*sha256.Size)
-		for packIndex := range this.packs {
-			this.dirty[packIndex] = struct{}{}
+func (a *Accounter) resizeHashBufferUnsafe(length int) {
+	if len(a.hashBuffer) == length {
+		return
+	}
+	newHashBuffer := make([]byte, length)
+	copy(newHashBuffer[:], a.hashBuffer[:])
+	a.hashBuffer = newHashBuffer
+}
+
+func (a *Accounter) getHashUnsafe() []byte {
+	if len(a.dirty) == 0 {
+		return a.hash[:]
+	}
+
+	totalPacks := a.getHeightUnsafe()
+	a.resizeHashBufferUnsafe(int(totalPacks * sha256.Size))
+	for number := range a.dirty {
+		if number >= totalPacks {
+			continue
 		}
-	}
-
-	if len(this.dirty) == 0 {
-		return this.hash[:]
-	}
-
-	for packIndex := range this.dirty {
-		pack := this.packs[packIndex]
-		begin := packIndex * sha256.Size
+		pack := a.getPackUnsafe(number)
+		begin := number * sha256.Size
 		end := begin + sha256.Size
-		copy(this.hashBuffer[begin:end], pack.GetHash())
+		copy(a.hashBuffer[begin:end], pack.GetHash())
 	}
+	a.dirty = make(map[uint32]struct{})
 
-	this.dirty = make(map[uint32]struct{})
-
-	hash := sha256.Sum256(this.hashBuffer)
-	copy(this.hash[:sha256.Size], hash[:])
-	return this.hash[:]
+	hash := sha256.Sum256(a.hashBuffer)
+	copy(a.hash[:sha256.Size], hash[:])
+	return a.hash[:]
 }
 
 func (this *Accounter) getHeightUnsafe() uint32 {
-	return uint32(len(this.packs))
+	maxPack := this.getMaxPack()
+	if maxPack == nil {
+		return 0
+	}
+	return *maxPack + 1
+}
+
+func (a *Accounter) Merge() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	a.updated.forEach(func(number uint32, pack *PackBase) {
+		a.packs.set(number, *pack)
+		a.dirty[number] = struct{}{}
+	})
+	a.updated = newPacksMap()
+}
+
+func (a *Accounter) Rollback() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	a.updated.forEach(func(number uint32, pack *PackBase) {
+		a.dirty[number] = struct{}{}
+	})
+	a.updated = newPacksMap()
 }
 
 func (this *Accounter) GetState() (uint32, []byte, *big.Int) {
@@ -135,24 +155,31 @@ func (this *Accounter) GetState() (uint32, []byte, *big.Int) {
 }
 
 func (this *Accounter) getCumulativeDifficultyUnsafe() *big.Int {
-	if len(this.packs) > 0 {
-		pack := this.packs[uint32(len(this.packs)-1)]
-		return pack.GetCumulativeDifficulty()
+	max := this.getMaxPack()
+	if max == nil {
+		return big.NewInt(0)
 	}
-	return big.NewInt(0)
+	pack := this.getPackUnsafe(*max)
+	return pack.GetCumulativeDifficulty()
 }
 
-func (this *Accounter) getPackContainingAccountUnsafe(accountNumber uint32) *PackBase {
+func (a *Accounter) getPackUnsafe(packNumber uint32) *PackBase {
+	if pack := a.updated.get(packNumber); pack != nil {
+		return pack
+	}
+	return a.packs.get(packNumber)
+}
+
+func (a *Accounter) getPackContainingAccountUnsafe(accountNumber uint32) *PackBase {
 	packNumber := accountNumber / uint32(defaults.AccountsPerBlock)
-	pack := this.packs[packNumber]
-	return &pack
+	return a.getPackUnsafe(packNumber)
 }
 
 func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.Int, uint32) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	pack := this.packs[index]
+	pack := this.getPackUnsafe(index)
 	return pack.GetCumulativeDifficulty(), pack.GetAccount(0).GetTimestamp()
 }
 
@@ -179,21 +206,27 @@ func (this *Accounter) GetAccountPackSerialized(index uint32) ([]byte, error) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	pack := this.packs[index]
+	pack := this.getPackUnsafe(index)
 	return pack.Marshal()
 }
 
-func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
-	pack := this.getPackContainingAccountUnsafe(number)
-	pack.MarkDirty()
-	this.dirty[pack.GetIndex()] = struct{}{}
+func (a *Accounter) getPackForUpdateUnsafe(accountNumber uint32) (pack *PackBase, offset uint32) {
+	packNumber := accountNumber / uint32(defaults.AccountsPerBlock)
+	pack = a.updated.get(packNumber)
+	if pack == nil {
+		pack = a.packs.get(packNumber)
+		a.updated.set(packNumber, pack.Copy())
+		pack = a.updated.get(packNumber)
+	}
+	a.dirty[packNumber] = struct{}{}
+	offset = accountNumber % defaults.AccountsPerBlock
+	return pack, offset
 }
 
-func (this *Accounter) appendPackUnsafe(pack PackBase) {
-	packNumber := uint32(len(this.packs))
-	this.packs[packNumber] = pack
-	this.hashBuffer = append(this.hashBuffer, make([]byte, 32)...)
-	this.dirty[packNumber] = struct{}{}
+func (a *Accounter) appendPackUnsafe(pack PackBase) {
+	packNumber := a.getHeightUnsafe()
+	a.updated.set(packNumber, pack)
+	a.dirty[packNumber] = struct{}{}
 }
 
 func (this *Accounter) AppendPack(pack PackBase) {
@@ -217,46 +250,34 @@ func (this *Accounter) NewPack(miner *crypto.Public, reward uint64, timestamp ui
 func (this *Accounter) BalanceSub(number uint32, amount uint64, index uint32) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
-	defer this.markAccountDirtyUnsafe(number)
 
-	account := this.getAccountUnsafe(number)
-	account.balance = account.balance - amount
-	account.operations = account.operations + 1
-	account.operationsTotal = account.operationsTotal + 1
-	account.updatedIndex = index
+	pack, offset := this.getPackForUpdateUnsafe(number)
+	pack.BalanceSub(offset, amount, index)
 }
 
 func (this *Accounter) BalanceAdd(number uint32, amount uint64, index uint32) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
-	defer this.markAccountDirtyUnsafe(number)
 
-	account := this.getAccountUnsafe(number)
-	account.balance = account.balance + amount
-	account.updatedIndex = index
-	account.operationsTotal = account.operationsTotal + 1
+	pack, offset := this.getPackForUpdateUnsafe(number)
+	pack.BalanceAdd(offset, amount, index)
 }
 
 func (this *Accounter) KeyChange(number uint32, key *crypto.Public, index uint32, fee uint64) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
-	defer this.markAccountDirtyUnsafe(number)
 
-	account := this.getAccountUnsafe(number)
-	account.balance = account.balance - fee
-	account.operations = account.operations + 1
-	account.operationsTotal = account.operationsTotal + 1
-	account.publicKey = *key
-	account.updatedIndex = index
+	pack, offset := this.getPackForUpdateUnsafe(number)
+	pack.KeyChange(offset, key, index, fee)
 }
 
 func (a Accounter) Marshal() ([]byte, error) {
 	a.lock.RLock()
 	defer a.lock.RUnlock()
 
-	packs := make([]*PackPod, len(a.packs))
-	for each := range a.packs {
-		pack := a.packs[each]
+	packs := make([]*PackPod, a.getHeightUnsafe())
+	for each := range packs {
+		pack := a.getPackUnsafe(uint32(each))
 		packs[each] = pack.Pod()
 	}
 
@@ -273,13 +294,13 @@ func (a *Accounter) Unmarshal(data []byte) (int, error) {
 		return 0, err
 	}
 
-	a.dirty = nil
-	a.packs = make(map[uint32]PackBase)
-	for each := range a.packs {
+	a.packs = newPacksMap()
+	for each := range pod.Packs {
 		p := PackBase{}
 		p.FromPod(*pod.Packs[each])
-		a.packs[each] = p
+		a.appendPackUnsafe(p)
 	}
+	a.Merge()
 
 	return size, nil
 }

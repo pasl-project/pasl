@@ -57,6 +57,10 @@ func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty 
 	}
 }
 
+func (p *PackBase) Copy() PackBase {
+	return NewPackWithAccounts(p.index, p.accounts, p.cumulativeDifficulty)
+}
+
 func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32, cumulativeDifficulty *big.Int) PackBase {
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
@@ -106,8 +110,34 @@ func (this *PackBase) GetCumulativeDifficulty() *big.Int {
 	return big.NewInt(0).Set(this.cumulativeDifficulty)
 }
 
-func (this *PackBase) MarkDirty() {
+func (this *PackBase) BalanceSub(offset uint32, amount uint64, index uint32) {
 	this.dirty = true
+
+	account := &this.accounts[offset]
+	account.balance = account.balance - amount
+	account.operations = account.operations + 1
+	account.operationsTotal = account.operationsTotal + 1
+	account.updatedIndex = index
+}
+
+func (this *PackBase) BalanceAdd(offset uint32, amount uint64, index uint32) {
+	this.dirty = true
+
+	account := &this.accounts[offset]
+	account.balance = account.balance + amount
+	account.updatedIndex = index
+	account.operationsTotal = account.operationsTotal + 1
+}
+
+func (this *PackBase) KeyChange(offset uint32, key *crypto.Public, index uint32, fee uint64) {
+	this.dirty = true
+
+	account := &this.accounts[offset]
+	account.balance = account.balance - fee
+	account.operations = account.operations + 1
+	account.operationsTotal = account.operationsTotal + 1
+	account.publicKey = *key
+	account.updatedIndex = index
 }
 
 func (p *PackBase) FromPod(pod PackPod) {

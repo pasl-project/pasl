@@ -30,11 +30,11 @@ import (
 )
 
 type Accounter struct {
-	dirty      map[int]struct{}
+	dirty      map[uint32]struct{}
 	hash       []byte
 	hashBuffer []byte
 	lock       sync.RWMutex
-	packs      []PackBase
+	packs      map[uint32]PackBase
 }
 
 type accounterSerialized struct {
@@ -46,10 +46,10 @@ func NewAccounter() *Accounter {
 	copy(hash[:], defaults.GenesisSafeBox[:])
 
 	return &Accounter{
-		dirty:      make(map[int]struct{}),
+		dirty:      make(map[uint32]struct{}),
 		hash:       hash,
 		hashBuffer: make([]byte, 0),
-		packs:      make([]PackBase, 0),
+		packs:      make(map[uint32]PackBase, 0),
 	}
 }
 
@@ -63,12 +63,14 @@ func (this Accounter) Copy() Accounter {
 	hashBuffer := make([]byte, len(this.hashBuffer))
 	copy(hashBuffer[:], this.hashBuffer)
 
-	packs := make([]PackBase, len(this.packs))
-	copy(packs, this.packs)
+	packs := make(map[uint32]PackBase, len(this.packs))
+	for each := range this.packs {
+		packs[each] = this.packs[each]
+	}
 
-	dirty := map[int]struct{}(nil)
+	dirty := map[uint32]struct{}(nil)
 	if this.dirty != nil {
-		dirty = make(map[int]struct{})
+		dirty = make(map[uint32]struct{})
 		for each := range this.dirty {
 			dirty[each] = struct{}{}
 		}
@@ -96,7 +98,7 @@ func (this *Accounter) ToBlob() []byte {
 
 func (this *Accounter) getHashUnsafe() []byte {
 	if this.dirty == nil {
-		this.dirty = make(map[int]struct{})
+		this.dirty = make(map[uint32]struct{})
 		this.hashBuffer = make([]byte, len(this.packs)*sha256.Size)
 		for packIndex := range this.packs {
 			this.dirty[packIndex] = struct{}{}
@@ -108,10 +110,13 @@ func (this *Accounter) getHashUnsafe() []byte {
 	}
 
 	for packIndex := range this.dirty {
-		copy(this.hashBuffer[packIndex*sha256.Size:(packIndex+1)*sha256.Size], this.packs[packIndex].GetHash())
+		pack := this.packs[packIndex]
+		begin := packIndex * sha256.Size
+		end := begin + sha256.Size
+		copy(this.hashBuffer[begin:end], pack.GetHash())
 	}
 
-	this.dirty = make(map[int]struct{})
+	this.dirty = make(map[uint32]struct{})
 
 	hash := sha256.Sum256(this.hashBuffer)
 	copy(this.hash[:sha256.Size], hash[:])
@@ -131,14 +136,16 @@ func (this *Accounter) GetState() (uint32, []byte, *big.Int) {
 
 func (this *Accounter) getCumulativeDifficultyUnsafe() *big.Int {
 	if len(this.packs) > 0 {
-		return this.packs[len(this.packs)-1].GetCumulativeDifficulty()
+		pack := this.packs[uint32(len(this.packs)-1)]
+		return pack.GetCumulativeDifficulty()
 	}
 	return big.NewInt(0)
 }
 
-func (this *Accounter) getPackContainingAccountUnsafe(number uint32) *PackBase {
-	pack := number / uint32(defaults.AccountsPerBlock)
-	return &this.packs[pack]
+func (this *Accounter) getPackContainingAccountUnsafe(accountNumber uint32) *PackBase {
+	packNumber := accountNumber / uint32(defaults.AccountsPerBlock)
+	pack := this.packs[packNumber]
+	return &pack
 }
 
 func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.Int, uint32) {
@@ -172,19 +179,21 @@ func (this *Accounter) GetAccountPackSerialized(index uint32) ([]byte, error) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return this.packs[index].Marshal()
+	pack := this.packs[index]
+	return pack.Marshal()
 }
 
 func (this *Accounter) markAccountDirtyUnsafe(number uint32) {
 	pack := this.getPackContainingAccountUnsafe(number)
 	pack.MarkDirty()
-	this.dirty[int(pack.GetIndex())] = struct{}{}
+	this.dirty[pack.GetIndex()] = struct{}{}
 }
 
 func (this *Accounter) appendPackUnsafe(pack PackBase) {
-	this.packs = append(this.packs, pack)
+	packNumber := uint32(len(this.packs))
+	this.packs[packNumber] = pack
 	this.hashBuffer = append(this.hashBuffer, make([]byte, 32)...)
-	this.dirty[len(this.packs)-1] = struct{}{}
+	this.dirty[packNumber] = struct{}{}
 }
 
 func (this *Accounter) AppendPack(pack PackBase) {
@@ -246,8 +255,9 @@ func (a Accounter) Marshal() ([]byte, error) {
 	defer a.lock.RUnlock()
 
 	packs := make([]*PackPod, len(a.packs))
-	for each := range packs {
-		packs[each] = a.packs[each].Pod()
+	for each := range a.packs {
+		pack := a.packs[each]
+		packs[each] = pack.Pod()
 	}
 
 	pod := &AccounterPod{
@@ -264,7 +274,7 @@ func (a *Accounter) Unmarshal(data []byte) (int, error) {
 	}
 
 	a.dirty = nil
-	a.packs = make([]PackBase, len(pod.Packs))
+	a.packs = make(map[uint32]PackBase)
 	for each := range a.packs {
 		p := PackBase{}
 		p.FromPod(*pod.Packs[each])

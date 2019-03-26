@@ -147,6 +147,13 @@ func (a *Accounter) Rollback() {
 	a.updated = newPacksMap()
 }
 
+func (this *Accounter) GetHeight() uint32 {
+	this.lock.RLock()
+	defer this.lock.RUnlock()
+
+	return this.getHeightUnsafe()
+}
+
 func (this *Accounter) GetState() (uint32, []byte, *big.Int) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()

@@ -186,7 +186,7 @@ func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {
 
 	timestamps = make([]uint32, 0, count)
 
-	height, _, _ := this.accounter.GetState()
+	height := this.accounter.GetHeight()
 	for i := uint32(0); i < count && height > 0; i++ {
 		if account := this.accounter.GetAccount(height*uint32(defaults.AccountsPerBlock) - 1); account != nil {
 			timestamps = append(timestamps, account.GetTimestamp())

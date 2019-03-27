@@ -211,6 +211,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	affectedByBlocks := make(map[safebox.BlockBase]blockInfo)
 	blocksProcessed := make([]safebox.BlockBase, 0, len(blocks))
 
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Header.Index < blocks[j].Header.Index })
 	for _, blockSerialized := range blocks {
 		meta := &safebox.BlockMetadata{
 			Index:           blockSerialized.Header.Index,

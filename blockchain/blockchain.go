@@ -142,7 +142,8 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	if err != nil {
 		return
 	}
-	accounterHeight, _, _ := accounterInstance.GetState()
+	accounterInstance.Merge()
+	accounterHeight := accounterInstance.GetHeight()
 	if height != accounterHeight {
 		err = errors.New("Accounts count is not consistent with the blockchain height")
 		return

@@ -376,6 +376,10 @@ func (this *Blockchain) LoadNearestSnapshot(targetHeight uint32) (*accounter.Acc
 }
 
 func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) error {
+	if len(blocks) == 0 {
+		return nil
+	}
+
 	{
 		header := blocks[0].Header
 		mainBlock := this.GetBlock(header.Index)

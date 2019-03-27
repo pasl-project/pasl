@@ -46,10 +46,10 @@ type packSerialized struct {
 	Index                uint32
 }
 
-func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty *big.Int) PackBase {
+func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty *big.Int) *PackBase {
 	accountsCopy := make([]Account, len(accounts))
 	copy(accountsCopy, accounts)
-	return PackBase{
+	return &PackBase{
 		accounts:             accountsCopy,
 		cumulativeDifficulty: big.NewInt(0).Set(cumulativeDifficulty),
 		dirty:                true,
@@ -57,11 +57,11 @@ func NewPackWithAccounts(index uint32, accounts []Account, cumulativeDifficulty 
 	}
 }
 
-func (p *PackBase) Copy() PackBase {
+func (p *PackBase) Copy() *PackBase {
 	return NewPackWithAccounts(p.index, p.accounts, p.cumulativeDifficulty)
 }
 
-func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32, cumulativeDifficulty *big.Int) PackBase {
+func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32, cumulativeDifficulty *big.Int) *PackBase {
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i := range accounts {

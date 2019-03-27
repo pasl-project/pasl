@@ -30,6 +30,8 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
+var emptyDigest = [sha256.Size]byte{}
+
 type Accounter struct {
 	hash       []byte
 	hashBuffer []byte
@@ -101,7 +103,12 @@ func (a *Accounter) getHashUnsafe() []byte {
 	}
 
 	totalPacks := a.getHeightUnsafe()
-	a.resizeHashBufferUnsafe(int(totalPacks * sha256.Size))
+
+	bufferLength := int(totalPacks * sha256.Size)
+	for len(a.hashBuffer) < bufferLength {
+		a.hashBuffer = append(a.hashBuffer, emptyDigest[:]...)
+	}
+
 	for number := range a.dirty {
 		if number >= totalPacks {
 			continue
@@ -113,9 +120,9 @@ func (a *Accounter) getHashUnsafe() []byte {
 	}
 	a.dirty = make(map[uint32]struct{})
 
-	hash := sha256.Sum256(a.hashBuffer)
+	hash := sha256.Sum256(a.hashBuffer[:bufferLength])
 	copy(a.hash[:sha256.Size], hash[:])
-	return a.hash[:]
+	return hash[:]
 }
 
 func (this *Accounter) getHeightUnsafe() uint32 {
@@ -131,8 +138,7 @@ func (a *Accounter) Merge() {
 	defer a.lock.Unlock()
 
 	a.updated.forEach(func(number uint32, pack *PackBase) {
-		a.packs.set(number, *pack)
-		a.dirty[number] = struct{}{}
+		a.packs.set(number, pack)
 	})
 	a.updated = newPacksMap()
 }
@@ -221,22 +227,21 @@ func (a *Accounter) getPackForUpdateUnsafe(accountNumber uint32) (pack *PackBase
 	packNumber := accountNumber / uint32(defaults.AccountsPerBlock)
 	pack = a.updated.get(packNumber)
 	if pack == nil {
-		pack = a.packs.get(packNumber)
-		a.updated.set(packNumber, pack.Copy())
-		pack = a.updated.get(packNumber)
+		pack = a.packs.get(packNumber).Copy()
+		a.updated.set(packNumber, pack)
 	}
 	a.dirty[packNumber] = struct{}{}
 	offset = accountNumber % defaults.AccountsPerBlock
 	return pack, offset
 }
 
-func (a *Accounter) appendPackUnsafe(pack PackBase) {
+func (a *Accounter) appendPackUnsafe(pack *PackBase) {
 	packNumber := a.getHeightUnsafe()
 	a.updated.set(packNumber, pack)
 	a.dirty[packNumber] = struct{}{}
 }
 
-func (this *Accounter) AppendPack(pack PackBase) {
+func (this *Accounter) AppendPack(pack *PackBase) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -306,7 +311,7 @@ func (a *Accounter) Unmarshal(data []byte) (int, error) {
 	for each := range pod.Packs {
 		p := PackBase{}
 		p.FromPod(*pod.Packs[each])
-		a.appendPackUnsafe(p)
+		a.appendPackUnsafe(&p)
 	}
 	a.Merge()
 

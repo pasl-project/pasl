@@ -132,7 +132,7 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 		if err != nil {
 			return err
 		}
-		accounterInstance.AppendPack(pack)
+		accounterInstance.AppendPack(&pack)
 		return nil
 	})
 	if err != nil {

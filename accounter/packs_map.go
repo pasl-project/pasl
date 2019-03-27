@@ -61,8 +61,8 @@ func (p *packsMap) get(number uint32) *PackBase {
 	return nil
 }
 
-func (p *packsMap) set(number uint32, pack PackBase) {
-	p.packs[number] = &pack
+func (p *packsMap) set(number uint32, pack *PackBase) {
+	p.packs[number] = pack
 	p.max = utils.MaxUint32(p.max, number)
 }
 

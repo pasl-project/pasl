@@ -49,6 +49,13 @@ type eventNewOperation struct {
 	tx.Tx
 }
 
+type syncState int
+
+const (
+	synced  syncState = iota
+	syncing           = iota
+)
+
 type manager struct {
 	network.Manager
 
@@ -62,6 +69,8 @@ type manager struct {
 	onStateUpdate          chan *PascalConnection
 	onNewBlock             chan *eventNewBlock
 	onNewOperation         chan *eventNewOperation
+	onSyncState            chan syncState
+	prevSyncState          syncState
 	closed                 chan *PascalConnection
 	initializedConnections sync.Map
 	doSyncValue            bool
@@ -76,6 +85,8 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		peerUpdates:    peerUpdates,
 		onStateUpdate:  make(chan *PascalConnection),
 		onNewOperation: make(chan *eventNewOperation),
+		onSyncState:    make(chan syncState),
+		prevSyncState:  syncing,
 		closed:         make(chan *PascalConnection),
 		onNewBlock:     make(chan *eventNewBlock),
 		doSync:         sync.NewCond(&sync.Mutex{}),
@@ -124,6 +135,16 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 					conn.onStateUpdated()
 				}
 				signalSync()
+			case state := <-manager.onSyncState:
+				if state != manager.prevSyncState {
+					manager.prevSyncState = state
+					switch manager.prevSyncState {
+					case synced:
+						utils.Tracef("Synchronized with the network at height %d", manager.blockchain.GetHeight())
+					case syncing:
+						utils.Tracef("Synchronizing with the network")
+					}
+				}
 			case <-ctx.Done():
 				return
 			}
@@ -167,8 +188,8 @@ func (this *manager) sync(ctx context.Context) bool {
 		}
 
 		candidates := make([]*PascalConnection, 0)
-		this.initializedConnections.Range(func(conn, height interface{}) bool {
-			if height.(uint32) > nodeHeight {
+		connections := 0
+			connections++
 				candidates = append(candidates, conn.(*PascalConnection))
 			}
 			return true
@@ -176,7 +197,12 @@ func (this *manager) sync(ctx context.Context) bool {
 
 		candidatesTotal := len(candidates)
 		if candidatesTotal == 0 {
+			if connections > 0 {
+				this.onSyncState <- synced
+			}
 			return result
+		} else {
+			this.onSyncState <- syncing
 		}
 
 		selected := rand.Int() % candidatesTotal

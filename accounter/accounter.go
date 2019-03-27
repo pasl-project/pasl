@@ -99,7 +99,9 @@ func (a *Accounter) resizeHashBufferUnsafe(length int) {
 
 func (a *Accounter) getHashUnsafe() []byte {
 	if len(a.dirty) == 0 {
-		return a.hash[:]
+		hash := make([]byte, sha256.Size)
+		copy(hash[:], a.hash[:sha256.Size])
+		return hash[:]
 	}
 
 	totalPacks := a.getHeightUnsafe()

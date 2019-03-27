@@ -206,3 +206,14 @@ func NewPublic(data []byte) (*Public, error) {
 
 	return &public, nil
 }
+
+func (p *Public) Copy() Public {
+	return Public{
+		TypeId: p.TypeId,
+		PublicKey: ecdsa.PublicKey{
+			Curve: p.PublicKey.Curve,
+			X:     big.NewInt(0).Set(p.PublicKey.X),
+			Y:     big.NewInt(0).Set(p.PublicKey.Y),
+		},
+	}
+}

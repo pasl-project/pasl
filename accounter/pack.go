@@ -65,7 +65,8 @@ func NewPack(index uint32, miner *crypto.Public, reward uint64, timestamp uint32
 	accounts := make([]Account, defaults.AccountsPerBlock)
 	number := index * uint32(defaults.AccountsPerBlock)
 	for i := range accounts {
-		accounts[i] = NewAccount(number, miner, 0, index, 0, 0, timestamp)
+		minerCopy := miner.Copy()
+		accounts[i] = NewAccount(number, &minerCopy, 0, index, 0, 0, timestamp)
 		number++
 	}
 	accounts[0].balance = reward
@@ -136,7 +137,7 @@ func (this *PackBase) KeyChange(offset uint32, key *crypto.Public, index uint32,
 	account.balance = account.balance - fee
 	account.operations = account.operations + 1
 	account.operationsTotal = account.operationsTotal + 1
-	account.publicKey = *key
+	account.publicKey = key.Copy()
 	account.updatedIndex = index
 }
 

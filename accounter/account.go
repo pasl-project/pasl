@@ -44,7 +44,7 @@ type AccountHashBuffer struct {
 func NewAccount(number uint32, publicKey *crypto.Public, balance uint64, updatedIndex uint32, operationsCount uint32, operationsTotal uint32, timestamp uint32) Account {
 	return Account{
 		number:          number,
-		publicKey:       *publicKey,
+		publicKey:       publicKey.Copy(),
 		balance:         balance,
 		updatedIndex:    updatedIndex,
 		operations:      operationsCount,

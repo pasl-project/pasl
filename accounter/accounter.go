@@ -249,7 +249,8 @@ func (this *Accounter) NewPack(miner *crypto.Public, reward uint64, timestamp ui
 
 	cumulativeDifficulty := this.getCumulativeDifficultyUnsafe()
 	cumulativeDifficulty.Add(cumulativeDifficulty, difficulty)
-	pack := NewPack(this.getHeightUnsafe(), miner, reward, timestamp, cumulativeDifficulty)
+	minerCopy := miner.Copy()
+	pack := NewPack(this.getHeightUnsafe(), &minerCopy, reward, timestamp, cumulativeDifficulty)
 	this.appendPackUnsafe(pack)
 	return pack.GetIndex()
 }

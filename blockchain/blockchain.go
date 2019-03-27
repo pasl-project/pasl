@@ -522,6 +522,16 @@ func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.Serializ
 	}
 }
 
+func (b *Blockchain) GetTopBlock() safebox.BlockBase {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	if height := b.GetHeight(); height > 0 {
+		return b.GetBlock(height - 1)
+	}
+	return b.GetPendingBlock(nil)
+}
+
 func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
 	var blockTimestamp uint32
 	if timestamp == nil {

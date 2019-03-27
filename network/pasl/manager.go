@@ -129,8 +129,8 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 			case conn := <-manager.closed:
 				manager.initializedConnections.Delete(conn)
 			case conn := <-manager.onStateUpdate:
-				connHeight, _ := conn.GetState()
-				manager.initializedConnections.Store(conn, connHeight)
+				topBlockIndex, _ := conn.GetState()
+				manager.initializedConnections.Store(conn, topBlockIndex)
 				if conn.onStateUpdated != nil {
 					conn.onStateUpdated()
 				}
@@ -189,7 +189,9 @@ func (this *manager) sync(ctx context.Context) bool {
 
 		candidates := make([]*PascalConnection, 0)
 		connections := 0
+		this.initializedConnections.Range(func(conn, topBlockIndex interface{}) bool {
 			connections++
+			if topBlockIndex.(uint32) >= nodeHeight {
 				candidates = append(candidates, conn.(*PascalConnection))
 			}
 			return true
@@ -207,11 +209,11 @@ func (this *manager) sync(ctx context.Context) bool {
 
 		selected := rand.Int() % candidatesTotal
 		conn := candidates[selected]
-		height, _ := conn.GetState()
-		ahead := height - nodeHeight
-		utils.Tracef("[P2P %s] Fetching blocks %d -> %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, height, ahead, ahead/288)
+		topBlockIndex, _ := conn.GetState()
+		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, topBlockIndex)
+		ahead := topBlockIndex + 1 - nodeHeight
+		utils.Tracef("[P2P %s] Fetching blocks %d .. %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, to, ahead, ahead/288)
 
-		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, height-1)
 		blocks := conn.BlocksGet(nodeHeight, to)
 		nodeHeight += uint32(len(blocks))
 

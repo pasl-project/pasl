@@ -34,7 +34,7 @@ import (
 )
 
 type pascalConnectionState struct {
-	height          uint32
+	topBlockIndex   uint32
 	prevSafeboxHash []byte
 }
 
@@ -66,7 +66,12 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 		return nil
 	}
 
-	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(nil), false, false), nil, defaults.UserAgent)
+	topBlock := this.blockchain.GetTopBlock()
+	if topBlock == nil {
+		return fmt.Errorf("failed to get top block")
+	}
+
+	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
 	return this.underlying.sendRequest(hello, payload, this.onHelloCommon)
 }
 
@@ -78,13 +83,13 @@ func (this *PascalConnection) OnClose() {
 	this.closed <- this
 }
 
-func (this *PascalConnection) SetState(height uint32, prevSafeboxHash []byte) {
+func (this *PascalConnection) SetState(topBlockIndex uint32, prevSafeboxHash []byte) {
 	this.stateLock.Lock()
 	defer this.stateLock.Unlock()
 	defer func() { this.onStateUpdate <- this }()
 
 	state := &pascalConnectionState{
-		height:          height,
+		topBlockIndex:   topBlockIndex,
 		prevSafeboxHash: make([]byte, 32),
 	}
 	copy(state.prevSafeboxHash[:32], prevSafeboxHash)
@@ -94,7 +99,7 @@ func (this *PascalConnection) SetState(height uint32, prevSafeboxHash []byte) {
 func (this *PascalConnection) GetState() (uint32, []byte) {
 	this.stateLock.RLock()
 	defer this.stateLock.RUnlock()
-	return this.state.height, this.state.prevSafeboxHash
+	return this.state.topBlockIndex, this.state.prevSafeboxHash
 }
 
 func (this *PascalConnection) BlocksGet(from, to uint32) []safebox.SerializedBlock {
@@ -159,7 +164,7 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 		return fmt.Errorf("[P2P %s] Loopback connection", this.logPrefix)
 	}
 
-	utils.Tracef("[P2P %s] Height %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
+	utils.Tracef("[P2P %s] Top block %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
 	this.SetState(packet.Block.Index, packet.Block.PrevSafeboxHash)
 
 	for _, peer := range packet.Peers {
@@ -174,7 +179,12 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 		return nil, err
 	}
 
-	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(this.blockchain.GetPendingBlock(nil), false, false), nil, defaults.UserAgent)
+	topBlock := this.blockchain.GetTopBlock()
+	if topBlock == nil {
+		return nil, fmt.Errorf("failed to get top block")
+	}
+
+	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
 	request.result.setError(success)
 	return out, nil
 }

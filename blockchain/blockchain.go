@@ -88,7 +88,6 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		return blockchain, nil
 	}
 
-	packs := make(map[uint32]struct{})
 	if err = s.LoadBlocks(height, func(index uint32, data []byte) error {
 		var blockMeta safebox.BlockMetadata
 		if err := utils.Deserialize(&blockMeta, bytes.NewBuffer(data)); err != nil {
@@ -98,18 +97,15 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		if err != nil {
 			return err
 		}
-		newTarget, updatedPacks, _, err := blockchain.addBlock(blockchain.safebox, blockchain.target, block)
+		newTarget, _, err := blockchain.addBlock(blockchain.target, block)
 		blockchain.target = newTarget
-		for packIndex := range updatedPacks {
-			packs[packIndex] = struct{}{}
-		}
 		return err
 	}); err != nil {
 		return nil, err
 	}
 	blockchain.safebox.Merge()
 	if restore {
-		blockchain.flushPacks(packs)
+		blockchain.flushPacks(blockchain.safebox.GetUpdatedPacks())
 	}
 
 	return blockchain, nil
@@ -165,49 +161,47 @@ func load(storage storage.Storage, accounterInstance *accounter.Accounter) (topB
 	return &meta, nil
 }
 
-func (*Blockchain) addBlock(currentSafebox *safebox.Safebox, target common.TargetBase, block safebox.BlockBase) (common.TargetBase, map[uint32]struct{}, map[*accounter.Account]map[uint32]uint32, error) {
+func (b *Blockchain) addBlock(target common.TargetBase, block safebox.BlockBase) (common.TargetBase, map[*accounter.Account]map[uint32]uint32, error) {
 	if block.GetTimestamp() > uint32(time.Now().Unix())+defaults.MaxBlockTimeOffset {
-		return nil, nil, nil, ErrFutureTimestamp
+		return nil, nil, ErrFutureTimestamp
 	}
 
 	// TODO: check block hash for genesis block
-	height, safeboxHash, _ := currentSafebox.GetState()
+	height, safeboxHash, _ := b.safebox.GetState()
 	if height != block.GetIndex() {
-		return nil, nil, nil, ErrInvalidOrder
+		return nil, nil, ErrInvalidOrder
 	}
 	if !bytes.Equal(safeboxHash, block.GetPrevSafeBoxHash()) {
 		utils.Tracef("Invalid block %d safeboxHash %s != %s expected", block.GetIndex(), hex.EncodeToString(block.GetPrevSafeBoxHash()), hex.EncodeToString(safeboxHash))
-		return nil, nil, nil, ErrParentNotFound
+		return nil, nil, ErrParentNotFound
 	}
 
-	lastTimestamps := currentSafebox.GetLastTimestamps(1)
+	lastTimestamps := b.safebox.GetLastTimestamps(1)
 	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return nil, nil, nil, errors.New("Invalid timestamp")
+		return nil, nil, errors.New("Invalid timestamp")
 	}
-	if err := currentSafebox.GetFork().CheckBlock(target, block); err != nil {
-		return nil, nil, nil, errors.New("Invalid block: " + err.Error())
+	if err := b.safebox.GetFork().CheckBlock(target, block); err != nil {
+		return nil, nil, errors.New("Invalid block: " + err.Error())
 	}
 
-	updatedPacks, affectedByTx, err := currentSafebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
+	affectedByTx, err := b.safebox.ProcessOperations(block.GetMiner(), block.GetTimestamp(), block.GetOperations(), block.GetTarget().GetDifficulty())
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	newHeight := height + 1
 	newTarget := target
 	if fork := safebox.TryActivateFork(newHeight, block.GetPrevSafeBoxHash()); fork != nil {
 		newTarget = block.GetTarget()
-		currentSafebox.SetFork(fork)
+		b.safebox.SetFork(fork)
 	}
-	newTarget = common.NewTarget(currentSafebox.GetFork().GetNextTarget(newTarget, currentSafebox.GetLastTimestamps))
+	newTarget = common.NewTarget(b.safebox.GetFork().GetNextTarget(newTarget, b.safebox.GetLastTimestamps))
 
-	return newTarget, updatedPacks, affectedByTx, nil
+	return newTarget, affectedByTx, nil
 }
 
-func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
-	currentSafebox := this.safebox
+func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(*safebox.Safebox, common.TargetBase) error) error {
 	currentTarget := this.target
-	updatedPacksTotal := make(map[uint32]struct{})
 	affectedByBlocks := make(map[safebox.BlockBase]blockInfo)
 	blocksProcessed := make([]safebox.BlockBase, 0, len(blocks))
 
@@ -230,15 +224,12 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		}
 		blocksProcessed = append(blocksProcessed, block)
 
-		newTarget, updatedPacks, affectedByTx, err := this.addBlock(currentSafebox, currentTarget, block)
+		newTarget, affectedByTx, err := this.addBlock(currentTarget, block)
 		if err != nil {
 			return err
 		}
 		currentTarget = newTarget
 
-		for pack := range updatedPacks {
-			updatedPacksTotal[pack] = struct{}{}
-		}
 		affectedByBlocks[block] = blockInfo{
 			meta:         meta,
 			affectedByTx: affectedByTx,
@@ -246,14 +237,15 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	}
 
 	if preSave != nil {
-		if err := (*preSave)(*currentSafebox, currentTarget); err != nil {
+		if err := (*preSave)(this.safebox, currentTarget); err != nil {
 			return err
 		}
 	}
 
+	updatedPacks := this.safebox.GetUpdatedPacks()
 	err := this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
-		for packIndex := range updatedPacksTotal {
-			data, err := currentSafebox.GetAccountPackSerialized(packIndex)
+		for _, packIndex := range updatedPacks {
+			data, err := this.safebox.GetAccountPackSerialized(packIndex)
 			if err != nil {
 				return err
 			}
@@ -305,7 +297,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 				s.DropSnapshot(ctx, snapshots[index])
 			}
 
-			buffer, err := currentSafebox.SerializeAccounter()
+			buffer, err := this.safebox.SerializeAccounter()
 			if err == nil {
 				if err := s.StoreSnapshot(ctx, height, buffer); err != nil {
 					return err
@@ -329,13 +321,12 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		this.txPoolCleanUpUnsafe(block.GetOperations())
 	}
 
-	this.safebox = currentSafebox
 	this.target = currentTarget
 
 	return nil
 }
 
-func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.Safebox, common.TargetBase) error) error {
+func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(*safebox.Safebox, common.TargetBase) error) error {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
@@ -402,23 +393,21 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	mainBlock := this.GetBlock(snapshotHeight - 1)
 
 	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
-	currentSafebox := newBlockchain.safebox
 	currentTarget := newBlockchain.target
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
 		block := this.GetBlock(index)
-		newTarget, _, _, err := this.addBlock(currentSafebox, currentTarget, block)
+		newTarget, _, err := this.addBlock(currentTarget, block)
 		if err != nil {
 			return err
 		}
 		currentTarget = newTarget
 	}
-	newBlockchain.safebox = currentSafebox
 	newBlockchain.target = currentTarget
 
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	cumulativeDifficultyCheck := func(altSafebox safebox.Safebox, target common.TargetBase) error {
+	cumulativeDifficultyCheck := func(altSafebox *safebox.Safebox, target common.TargetBase) error {
 		_, _, cumulativeDifficulty := altSafebox.GetState()
 		_, _, currentCumulativeDifficulty := this.GetState()
 		if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {
@@ -441,12 +430,12 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	return nil
 }
 
-func (this *Blockchain) flushPacks(updatedPacks map[uint32]struct{}) error {
+func (this *Blockchain) flushPacks(updatedPacks []uint32) error {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
 	return this.storage.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {
-		for packIndex := range updatedPacks {
+		for _, packIndex := range updatedPacks {
 			data, err := this.safebox.GetAccountPackSerialized(packIndex)
 			if err != nil {
 				return err

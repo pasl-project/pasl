@@ -202,19 +202,19 @@ func (this *Accounter) GetAccount(number uint32) *Account {
 	return this.getAccountUnsafe(number)
 }
 
-func (this *Accounter) GetAccountPack(number uint32) uint32 {
-	this.lock.RLock()
-	defer this.lock.RUnlock()
-
-	return this.getPackContainingAccountUnsafe(number).GetIndex()
-}
-
 func (this *Accounter) GetAccountPackSerialized(index uint32) ([]byte, error) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
 	pack := this.getPackUnsafe(index)
 	return pack.Marshal()
+}
+
+func (a *Accounter) GetUpdatedPacks() []uint32 {
+	a.lock.RLock()
+	defer a.lock.RUnlock()
+
+	return a.updated.keys()
 }
 
 func (a *Accounter) getPackForUpdateUnsafe(accountNumber uint32) (pack *PackBase, offset uint32) {

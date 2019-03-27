@@ -39,6 +39,14 @@ func (p *packsMap) len() int {
 	return len(p.packs)
 }
 
+func (p *packsMap) keys() []uint32 {
+	keys := make([]uint32, 0, len(p.packs))
+	for k := range p.packs {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (p *packsMap) forEach(fn func(number uint32, pack *PackBase)) {
 	for each := range p.packs {
 		pack := p.packs[each]

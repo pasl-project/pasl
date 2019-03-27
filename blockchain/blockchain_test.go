@@ -40,7 +40,7 @@ func TestPendingBlock(t *testing.T) {
 		t.Fatal()
 	}
 
-	height, _, _ := blockchain.GetState()
+	height := blockchain.GetHeight()
 	if blockchain.GetBlock(height) != nil {
 		t.Fatal()
 	}
@@ -59,7 +59,7 @@ func TestDeserializeAndPow(t *testing.T) {
 		t.Fatal()
 	}
 
-	height, _, _ := blockchain.GetState()
+	height := blockchain.GetHeight()
 	if height != 0 {
 		t.Fatal()
 	}
@@ -77,7 +77,7 @@ func TestDeserializeAndPow(t *testing.T) {
 	if block, err := blockchain.AddBlockSerialized(&blockSerialized, nil); err != nil {
 		t.Fatal()
 	} else {
-		height, _, _ = blockchain.GetState()
+		height = blockchain.GetHeight()
 		if height != 1 {
 			t.Fatal()
 		}

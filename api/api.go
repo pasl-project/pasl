@@ -29,7 +29,7 @@ func NewApi(blockchain *blockchain.Blockchain) *Api {
 }
 
 func (this *Api) GetBlockCount(ctx context.Context) (int, error) {
-	height, _, _ := this.blockchain.GetState()
+	height := this.blockchain.GetHeight()
 	return int(height), nil
 }
 
@@ -43,7 +43,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 	for _, tx := range operations {
 		fee = fee + tx.GetFee()
 	}
-	height, _, _ := this.blockchain.GetState()
+	height := this.blockchain.GetHeight()
 	return &network.Block{
 		Block:       blockMeta.GetIndex(),
 		EncPubkey:   hex.EncodeToString(utils.Serialize(blockMeta.GetMiner().Serialized())),

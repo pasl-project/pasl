@@ -157,7 +157,7 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 func (this *manager) sync(ctx context.Context) bool {
 	result := false
 
-	nodeHeight, _, _ := this.blockchain.GetState()
+	nodeHeight := this.blockchain.GetHeight()
 	for {
 		select {
 		case <-ctx.Done():

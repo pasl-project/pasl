@@ -53,15 +53,18 @@ func (this *Safebox) ToBlob() []byte {
 	return this.accounter.ToBlob()
 }
 
-func (this *Safebox) getStateUnsafe() (uint32, []byte, *big.Int) {
-	return this.accounter.GetState()
+func (s *Safebox) GetHeight() uint32 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.accounter.GetHeight()
 }
 
 func (this *Safebox) GetState() (height uint32, safeboxHash []byte, cumulativeDifficulty *big.Int) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	return this.getStateUnsafe()
+	return this.accounter.GetState()
 }
 
 func (this *Safebox) GetFork() Fork {
@@ -83,11 +86,11 @@ func (this *Safebox) SetFork(fork Fork) {
 }
 
 func (this *Safebox) Validate(operation *tx.Tx) error {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+	this.lock.RLock()
+	defer this.lock.RUnlock()
 
 	// TODO: code duplicaion
-	height, _, _ := this.getStateUnsafe()
+	height := this.accounter.GetHeight()
 	_, err := operation.Validate(func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight < height {
@@ -135,7 +138,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	currentHeight, _, _ := this.getStateUnsafe()
+	currentHeight := this.accounter.GetHeight()
 	reward := getReward(currentHeight)
 	for index := range operations {
 		reward += operations[index].GetFee()
@@ -203,7 +206,7 @@ func (this *Safebox) GetHashrate(blockIndex, blocksCount uint32) uint64 {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	height, _, _ := this.accounter.GetState()
+	height := this.accounter.GetHeight()
 	if blockIndex >= height {
 		return 0
 	}
@@ -222,7 +225,7 @@ func (this *Safebox) GetAccount(number uint32) *accounter.Account {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	height, _, _ := this.getStateUnsafe()
+	height := this.accounter.GetHeight()
 	accountPack := number / uint32(defaults.AccountsPerBlock)
 	if accountPack+defaults.MaturationHeight < height {
 		account := *this.accounter.GetAccount(number)

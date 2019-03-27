@@ -297,7 +297,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 
 		this.blocksSinceSnapshot += uint32(len(affectedByBlocks))
 		if this.blocksSinceSnapshot > defaults.MaxAltChainLength/2 {
-			height, _, _ := currentSafebox.GetState()
+			height := this.safebox.GetHeight()
 
 			snapshots := this.storage.ListSnapshots()
 			sort.Slice(snapshots, func(i, j int) bool { return snapshots[i] > snapshots[j] })
@@ -398,7 +398,7 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 		return fmt.Errorf("failed to find nearest snapshot: %v", err)
 	}
 
-	snapshotHeight, _, _ := snapshot.GetState()
+	snapshotHeight := snapshot.GetHeight()
 	mainBlock := this.GetBlock(snapshotHeight - 1)
 
 	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
@@ -603,6 +603,10 @@ func (this *Blockchain) GetBlock(index uint32) safebox.BlockBase {
 	}
 
 	return block
+}
+
+func (this *Blockchain) GetHeight() uint32 {
+	return this.safebox.GetHeight()
 }
 
 func (this *Blockchain) GetState() (height uint32, safeboxHash []byte, cumulativeDifficulty *big.Int) {

@@ -1,5 +1,8 @@
 # PASL - Personalized Accounts & Safebox Ledger
 
+[![Build Status](https://travis-ci.org/pasl-project/pasl.svg?branch=master)](https://travis-ci.org/pasl-project/pasl)
+[![Coverage Status](https://coveralls.io/repos/github/pasl-project/pasl/badge.svg)](https://coveralls.io/github/pasl-project/pasl)
+
 PASL is a cryptocurrency based around the Safebox blockhain with strong security and easy to remember addresses (account numbers) like 0-10, 5-70 or 54321-26.
 
 Copyright (c) 2018 PASL Project

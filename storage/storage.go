@@ -455,7 +455,7 @@ func (this *StorageBoltDb) getTxMetadata(tx *bolt.Tx, txId uint64) (metadata []b
 		return metadata, nil
 	}
 
-	return nil, fmt.Errorf("Failed to get tx metadata by id %s", txId)
+	return nil, fmt.Errorf("Failed to get tx metadata by id %d", txId)
 }
 
 func (this *StorageBoltDb) GetTxMetadata(txRipemd160Hash [20]byte) (metadata []byte, err error) {

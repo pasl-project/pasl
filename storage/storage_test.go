@@ -150,12 +150,3 @@ func TestWriteRead(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestFailOpen(t *testing.T) {
-	dbFileName := ":"
-	if err := WithStorage(&dbFileName, func(storage Storage) error {
-		return nil
-	}); err == nil {
-		t.Fatal(err)
-	}
-}

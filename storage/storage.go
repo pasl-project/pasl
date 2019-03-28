@@ -114,6 +114,9 @@ func (this *StorageBoltDb) createTables() error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(tablePack)); err != nil {
 			return err
 		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(tablePeers)); err != nil {
+			return err
+		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(tableSnapshots)); err != nil {
 			return err
 		}

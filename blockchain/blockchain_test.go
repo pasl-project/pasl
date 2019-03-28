@@ -3,7 +3,7 @@ package blockchain
 import (
 	"bytes"
 	"encoding/hex"
-	"os"
+	"fmt"
 	"testing"
 
 	"github.com/pasl-project/pasl/safebox"
@@ -11,31 +11,78 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
-type EmptyStorage struct {
-	storage.Storage
+type MemoryStorage struct {
+	accountPacks map[uint32][]byte
+	blocks       map[uint32][]byte
 }
 
-func (storage *EmptyStorage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
+func NewMemoryStorage() *MemoryStorage {
+	return &MemoryStorage{
+		accountPacks: make(map[uint32][]byte),
+		blocks:       make(map[uint32][]byte),
+	}
+}
+
+func (storage *MemoryStorage) Load(callback func(number uint32, serialized []byte) error) (height uint32, err error) {
 	return 0, nil
 }
-func (storage *EmptyStorage) Store(index uint32, data []byte, txes func(func(txRipemd160Hash [20]byte, txData []byte)), accountOperations func(func(number uint32, internalOperationId uint32, txRipemd160Hash [20]byte)), affectedAccounts func(func(number uint32, data []byte))) error {
+func (storage *MemoryStorage) LoadBlocks(toHeight *uint32, callback func(index uint32, serialized []byte) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) LoadPeers(peers func(address []byte, data []byte)) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) ListSnapshots() []uint32 {
 	return nil
 }
-func (storage *EmptyStorage) Flush() error {
+func (storage *MemoryStorage) LoadSnapshot(height uint32) (serialized []byte) {
 	return nil
 }
-func (storage *EmptyStorage) GetBlock(index uint32) (data []byte, err error) {
-	return nil, os.ErrNotExist
+func (storage *MemoryStorage) GetBlock(index uint32) (data []byte, err error) {
+	if data, ok := storage.blocks[index]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("block not found")
 }
-func (storage *EmptyStorage) GetTx(txRipemd160Hash [20]byte) (data []byte, err error) {
-	return nil, os.ErrNotExist
+func (storage *MemoryStorage) GetTxMetadata(txRipemd160Hash [20]byte) (data []byte, err error) {
+	return nil, fmt.Errorf("not implemented")
 }
-func (storage *EmptyStorage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
-	return nil, os.ErrNotExist
+func (storage *MemoryStorage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) WithWritable(fn func(storageWritable storage.StorageWritable, context interface{}) error) error {
+	return fn(storage, interface{}(nil))
+}
+
+func (storage *MemoryStorage) StoreBlock(context interface{}, index uint32, data []byte) error {
+	storage.blocks[index] = data
+	return nil
+}
+func (storage *MemoryStorage) StoreTxHash(context interface{}, txRipemd160Hash [20]byte, blockIndex uint32, txIndexInsideBlock uint32) (uint64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) StoreTxMetadata(context interface{}, txId uint64, txMetadata []byte) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) StoreAccountOperation(context interface{}, number uint32, internalOperationId uint32, txId uint64) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) StoreAccountPack(context interface{}, index uint32, data []byte) error {
+	storage.accountPacks[index] = data
+	return nil
+}
+func (storage *MemoryStorage) StorePeers(context interface{}, peers func(func(address []byte, data []byte))) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) StoreSnapshot(context interface{}, number uint32, serialized []byte) error {
+	return fmt.Errorf("not implemented")
+}
+func (storage *MemoryStorage) DropSnapshot(context interface{}, height uint32) error {
+	return fmt.Errorf("not implemented")
 }
 
 func TestPendingBlock(t *testing.T) {
-	blockchain, err := NewBlockchain(&EmptyStorage{}, nil)
+	blockchain, err := NewBlockchain(NewMemoryStorage(), nil)
 	if err != nil {
 		t.Fatal()
 	}
@@ -54,9 +101,9 @@ func TestPendingBlock(t *testing.T) {
 }
 
 func TestDeserializeAndPow(t *testing.T) {
-	blockchain, err := NewBlockchain(&EmptyStorage{}, nil)
+	blockchain, err := NewBlockchain(NewMemoryStorage(), nil)
 	if err != nil {
-		t.Fatal()
+		t.Fatal(err)
 	}
 
 	height := blockchain.GetHeight()
@@ -71,17 +118,18 @@ func TestDeserializeAndPow(t *testing.T) {
 	powFromRaw := rawBlock[223:255]
 	var blockSerialized safebox.SerializedBlock
 	if err = utils.Deserialize(&blockSerialized, bytes.NewBuffer(rawBlock)); err != nil {
-		t.Fatal()
+		t.Fatal(err)
 	}
 
-	if block, err := blockchain.AddBlockSerialized(&blockSerialized, nil); err != nil {
-		t.Fatal()
+	if err := blockchain.ProcessNewBlock(blockSerialized); err != nil {
+		t.Fatal(err)
 	} else {
 		height = blockchain.GetHeight()
 		if height != 1 {
 			t.Fatal()
 		}
 
+		block := blockchain.GetBlock(blockSerialized.Header.Index)
 		pow := blockchain.GetBlockPow(block)
 		if !bytes.Equal(pow, powFromRaw) {
 			t.Fatalf("\n%s !=\n%s", hex.EncodeToString(powFromRaw), hex.EncodeToString(pow))

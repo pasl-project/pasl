@@ -52,21 +52,3 @@ func TestSerialize(t *testing.T) {
 		t.FailNow()
 	}
 }
-
-func TestCopy(t *testing.T) {
-	key, err := crypto.NewKey(crypto.NIDsecp256k1)
-	if err != nil {
-		t.FailNow()
-	}
-
-	accounter := NewAccounter()
-	accounter.NewPack(key.Public, 1, 2, big.NewInt(3))
-
-	other := accounter.Copy()
-
-	_, hash, _ := accounter.GetState()
-	_, hash2, _ := other.GetState()
-	if !bytes.Equal(hash, hash2) {
-		t.FailNow()
-	}
-}

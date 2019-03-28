@@ -475,6 +475,7 @@ func (this *StorageBoltDb) GetTxMetadata(txRipemd160Hash [20]byte) (metadata []b
 }
 
 func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+	txData = make(map[uint32][]byte)
 	return txData, this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
 

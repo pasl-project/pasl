@@ -112,7 +112,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 }
 
 func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target common.TargetBase) *Blockchain {
-	safeboxInstance := safebox.NewSafebox(*accounter)
+	safeboxInstance := safebox.NewSafebox(accounter)
 	nextTarget := safeboxInstance.GetFork().GetNextTarget(target, safeboxInstance.GetLastTimestamps)
 
 	blockchain := &Blockchain{

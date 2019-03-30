@@ -33,12 +33,12 @@ import (
 )
 
 type Safebox struct {
-	accounter accounter.Accounter
+	accounter *accounter.Accounter
 	fork      Fork
 	lock      sync.RWMutex
 }
 
-func NewSafebox(accounter accounter.Accounter) *Safebox {
+func NewSafebox(accounter *accounter.Accounter) *Safebox {
 	height, SafeboxHash, _ := accounter.GetState()
 	return &Safebox{
 		accounter: accounter,
@@ -172,7 +172,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		if err != nil {
 			return nil, err
 		}
-		accountsAffected, err := operations[index].Apply(currentHeight, context, &this.accounter)
+		accountsAffected, err := operations[index].Apply(currentHeight, context, this.accounter)
 		if err != nil {
 			return nil, err
 		}

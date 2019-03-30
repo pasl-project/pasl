@@ -286,7 +286,7 @@ func (this *Accounter) KeyChange(number uint32, key *crypto.Public, index uint32
 	pack.KeyChange(offset, key, index, fee)
 }
 
-func (a Accounter) Marshal() ([]byte, error) {
+func (a *Accounter) Marshal() ([]byte, error) {
 	a.lock.RLock()
 	defer a.lock.RUnlock()
 

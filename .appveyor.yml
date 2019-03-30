@@ -10,16 +10,17 @@ install:
   - go get github.com/mattn/goveralls
   - go get -u github.com/haya14busa/goverage
   - go vet ./...
+  - set PATH=%GOPATH%\bin;c:\go\bin;%PATH%
 
 build_script:
-  - go build -o pasl -i .
+  - go build -i .
 
 deploy: false
 
 test_script:
   - goverage -v -covermode=count -coverprofile=coverage.out ./...
-  - $GOPATH/bin/goveralls -coverprofile=coverage.out -service=appveyor -repotoken $COVERALLS_TOKEN
- 
+  - goveralls -coverprofile=coverage.out -service=appveyor -repotoken %COVERALLS_TOKEN%
+
 artifacts:
-  - path: pasl
+  - path: pasl.exe
     name: binary

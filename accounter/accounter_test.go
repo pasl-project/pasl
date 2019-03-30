@@ -28,7 +28,7 @@ import (
 )
 
 func TestSerialize(t *testing.T) {
-	key, err := crypto.NewKey(crypto.NIDsecp256k1)
+	key, err := crypto.NewKeyByType(crypto.NIDsecp256k1)
 	if err != nil {
 		t.FailNow()
 	}

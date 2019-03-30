@@ -556,7 +556,7 @@ func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx *tx.Tx) bo
 func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
 	var minerSerialized []byte
 	if miner == nil {
-		minerSerialized = utils.Serialize(crypto.NewKeyNil().Public)
+		minerSerialized = utils.Serialize(crypto.NewKey(nil, 0, nil, big.NewInt(0), big.NewInt(0)).Public)
 	} else {
 		minerSerialized = utils.Serialize(miner)
 	}

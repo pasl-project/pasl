@@ -24,13 +24,18 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
 
-	"github.com/coin-network/curve"
 	"github.com/pasl-project/pasl/utils"
+
+	"github.com/akamensky/base58"
+	"github.com/coin-network/curve"
+	"github.com/fd/eccp"
 )
 
 const (
@@ -56,6 +61,12 @@ type PublicSerializedPlain struct {
 	TypeId uint16
 	X      utils.Serializable
 	Y      utils.Serializable
+}
+
+type PublicPrefixChecksum struct {
+	Prefix   uint8
+	Public   PublicSerialized
+	Checksum uint32
 }
 
 type Signature struct {
@@ -94,38 +105,48 @@ func CurveById(typeId uint16) (elliptic.Curve, error) {
 	return nil, fmt.Errorf("Unknown curve id %d", typeId)
 }
 
-func NewKey(typeId uint16) (*Key, error) {
-	curve, err := CurveById(typeId)
+func NewKeyFromPrivate(typeID uint16, private []byte) (*Key, error) {
+	curve, err := CurveById(typeID)
 	if err != nil {
 		return nil, err
 	}
-	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
+	x, y := curve.ScalarBaseMult(private)
+	return NewKey(private, typeID, curve, x, y), nil
+}
+
+func NewKeyByType(typeID uint16) (*Key, error) {
+	curve, err := CurveById(typeID)
 	if err != nil {
 		return nil, err
 	}
+	priv, _, _, err := elliptic.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return NewKeyFromPrivate(typeID, priv)
+}
+
+func NewKey(private []byte, typeID uint16, curve elliptic.Curve, x *big.Int, y *big.Int) *Key {
 	return &Key{
-		Private: priv,
+		Private: private,
 		Public: &Public{
-			TypeId: typeId,
+			TypeId: typeID,
 			PublicKey: ecdsa.PublicKey{
 				Curve: curve,
 				X:     x,
 				Y:     y,
 			},
 		},
-	}, nil
+	}
 }
 
-func NewKeyNil() *Key {
-	return &Key{
-		Private: nil,
-		Public: &Public{
-			TypeId: 0,
-			PublicKey: ecdsa.PublicKey{
-				Curve: nil,
-				X:     &big.Int{},
-				Y:     &big.Int{},
-			},
+func (k *Key) Convert() *ecdsa.PrivateKey {
+	return &ecdsa.PrivateKey{
+		D: big.NewInt(0).SetBytes(k.Private),
+		PublicKey: ecdsa.PublicKey{
+			Curve: k.Public.Curve,
+			X:     big.NewInt(0).Set(k.Public.X),
+			Y:     big.NewInt(0).Set(k.Public.Y),
 		},
 	}
 }
@@ -135,6 +156,55 @@ func (this *Public) Equal(other *Public) bool {
 		return false
 	}
 	return this.X.Cmp(other.X) == 0 && this.Y.Cmp(other.Y) == 0
+}
+
+func PublicFromBase58(public string) (*Public, error) {
+	decoded, err := base58.Decode(public)
+	if err != nil {
+		return nil, err
+	}
+
+	data := PublicPrefixChecksum{}
+	if err := utils.Deserialize(&data, bytes.NewBuffer(decoded)); err != nil {
+		return nil, err
+	}
+
+	if data.Prefix != 0x01 {
+		return nil, fmt.Errorf("invalid prefx")
+	}
+
+	key := &Public{}
+	if err := PublicFromSerialized(key, data.Public.TypeId, data.Public.X, data.Public.Y); err != nil {
+		return nil, err
+	}
+	if key.Checksum() != data.Checksum {
+		return nil, fmt.Errorf("invalid checksum")
+	}
+
+	return key, nil
+}
+
+func (p *Public) ToBase58() string {
+	return base58.Encode(utils.Serialize(&PublicPrefixChecksum{
+		Prefix:   0x01,
+		Public:   p.Serialized(),
+		Checksum: p.Checksum(),
+	}))
+}
+
+func (p *Public) Checksum() uint32 {
+	serialized := p.Serialized()
+	toChecksum := utils.Serialize(&serialized)
+	hash := sha256.Sum256(toChecksum)
+	return binary.LittleEndian.Uint32(hash[:4])
+}
+
+func (p *Public) Convert() *ecdsa.PublicKey {
+	return &ecdsa.PublicKey{
+		Curve: p.Curve,
+		X:     big.NewInt(0).Set(p.X),
+		Y:     big.NewInt(0).Set(p.Y),
+	}
 }
 
 func (this *Public) Serialize(w io.Writer) error {
@@ -196,7 +266,7 @@ func NewPublic(data []byte) (*Public, error) {
 	}
 
 	if serialized.TypeId == 0 && len(serialized.X) == 0 && len(serialized.Y) == 0 {
-		return NewKeyNil().Public, nil
+		return NewKey(nil, 0, nil, big.NewInt(0), big.NewInt(0)).Public, nil
 	}
 
 	var public Public
@@ -216,4 +286,91 @@ func (p *Public) Copy() Public {
 			Y:     big.NewInt(0).Set(p.PublicKey.Y),
 		},
 	}
+}
+
+func unmarshal(c elliptic.Curve, data []byte) (x, y *big.Int) {
+	switch c {
+	case curve.S256():
+		{
+			// Copyright Simon Menke "fd" https://github.com/fd
+			// https://github.com/fd/eccp/blob/master/eccp.go
+			byteLen := (c.Params().BitSize + 7) >> 3
+
+			if len(data) != 1+byteLen {
+				// wrong length; fallback to uncompressed
+				return elliptic.Unmarshal(c, data)
+			}
+
+			if data[0] != 0x02 && data[0] != 0x03 {
+				// wrong header; fallback to uncompressed
+				return elliptic.Unmarshal(c, data)
+			}
+
+			x = new(big.Int).SetBytes(data[1 : 1+byteLen])
+
+			y = new(big.Int)
+
+			/* y = x^2 */
+			y.Mul(x, x)
+			y.Mod(y, c.Params().P)
+
+			/* y = x^3 */
+			y.Mul(y, x)
+			y.Mod(y, c.Params().P)
+
+			/* y = x^3 + b */
+			y.Add(y, c.Params().B)
+			y.Mod(y, c.Params().P)
+
+			modSqrt(y, c, y)
+
+			if y.Bit(0) != uint(data[0]&0x01) {
+				y.Sub(c.Params().P, y)
+			}
+
+			return x, y
+		}
+	case Sect283k1():
+		{
+			return nil, nil
+		}
+	default:
+		return eccp.Unmarshal(c, data)
+	}
+}
+
+func UnmarshalPublic(c elliptic.Curve, data []byte) *ecdsa.PublicKey {
+	x, y := unmarshal(c, data)
+	if x == nil || y == nil {
+		return nil
+	}
+	if !c.IsOnCurve(x, y) {
+		return nil
+	}
+	return &ecdsa.PublicKey{
+		Curve: c,
+		X:     x,
+		Y:     y,
+	}
+}
+
+// Copyright Simon Menke "fd" https://github.com/fd
+// https://github.com/fd/eccp/blob/master/eccp.go
+func modSqrt(z *big.Int, curve elliptic.Curve, a *big.Int) *big.Int {
+	p1 := big.NewInt(1)
+	p1.Add(p1, curve.Params().P)
+
+	result := big.NewInt(1)
+
+	for i := p1.BitLen() - 1; i > 1; i-- {
+		result.Mul(result, result)
+		result.Mod(result, curve.Params().P)
+		if p1.Bit(i) > 0 {
+			result.Mul(result, a)
+			result.Mod(result, curve.Params().P)
+		}
+	}
+
+	z.Set(result)
+	return z
 }

@@ -166,7 +166,7 @@ func run(cliContext *cli.Context) error {
 			TimeoutConnect: defaults.TimeoutConnect,
 		}
 
-		key, err := crypto.NewKey(crypto.NIDsecp256k1)
+		key, err := crypto.NewKeyByType(crypto.NIDsecp256k1)
 		if err != nil {
 			return err
 		}

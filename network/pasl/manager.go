@@ -202,7 +202,7 @@ func (this *manager) sync(ctx context.Context) bool {
 			if connections > 0 {
 				this.onSyncState <- synced
 			}
-			return result
+			break
 		} else {
 			this.onSyncState <- syncing
 		}

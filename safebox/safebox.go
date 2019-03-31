@@ -91,7 +91,7 @@ func (this *Safebox) Validate(operation tx.CommonOperation) error {
 
 	// TODO: code duplicaion
 	height := this.accounter.GetHeight()
-	_, err := operation.Validate(func(number uint32) *accounter.Account {
+	_, err := tx.Validate(operation, func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight < height {
 			return this.accounter.GetAccount(number)
@@ -168,7 +168,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 
 	affectedByTxes := make(map[*accounter.Account]map[uint32]uint32)
 	for index := range operations {
-		context, err := operations[index].Validate(getMaturedAccountUnsafe)
+		context, err := tx.Validate(operations[index], getMaturedAccountUnsafe)
 		if err != nil {
 			return nil, err
 		}

@@ -271,7 +271,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 				if err != nil {
 					return err
 				}
-				txMetadata := transaction.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
+				txMetadata := tx.GetMetadata(transaction, txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
 				if err = s.StoreTxMetadata(ctx, txID, utils.Serialize(txMetadata)); err != nil {
 					return err
 				}
@@ -546,10 +546,10 @@ func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx *tx.Tx) bo
 	i := uint32(0)
 	time := uint32(time.Now().Unix())
 	this.txPool.Range(func(key, value interface{}) bool {
-		tx := value.(tx.Tx)
-		meta := tx.GetMetadata(i, 0, time)
+		transaction := value.(tx.Tx)
+		meta := tx.GetMetadata(transaction, i, 0, time)
 		i += 1
-		return fn(&meta, &tx)
+		return fn(&meta, &transaction)
 	})
 }
 
@@ -660,7 +660,7 @@ func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.Tx
 
 	operations := block.GetOperations()
 	for index, _ := range operations {
-		meta := operations[index].GetMetadata(uint32(index), block.GetIndex(), block.GetTimestamp())
+		meta := tx.GetMetadata(operations[index], uint32(index), block.GetIndex(), block.GetTimestamp())
 		if !fn(&meta, &operations[index]) {
 			return nil
 		}

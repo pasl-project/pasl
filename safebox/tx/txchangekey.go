@@ -72,7 +72,7 @@ func (this *ChangeKey) GetPayload() []byte {
 	return this.Payload
 }
 
-func (this *ChangeKey) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
+func (this *ChangeKey) validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
 	source := getAccount(this.Source)
 	if source == nil {
 		return nil, fmt.Errorf("Source account %d not found", this.Source)

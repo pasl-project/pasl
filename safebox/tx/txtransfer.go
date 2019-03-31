@@ -73,7 +73,7 @@ func (this *Transfer) GetPayload() []byte {
 	return this.Payload
 }
 
-func (this *Transfer) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
+func (this *Transfer) validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
 	destination := getAccount(this.Destination)
 	if destination == nil {
 		return nil, fmt.Errorf("Destination account %d not found", this.Destination)

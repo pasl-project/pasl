@@ -53,7 +53,6 @@ type CommonOperation interface {
 	GetPayload() []byte
 	GetType() txType
 
-	Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 	Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error)
 
 	Serialize(w io.Writer) error
@@ -62,6 +61,7 @@ type CommonOperation interface {
 	getBufferToSign() []byte
 	getSignature() *crypto.SignatureSerialized
 	getSourceInfo() (number uint32, operationId uint32, publicKey *crypto.Public)
+	validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 }
 
 // TODO: rename to transaction
@@ -108,17 +108,13 @@ func Sign(tx CommonOperation, priv *ecdsa.PrivateKey) (txID string, raw []byte, 
 	return GetTxIdString(tx), serialized.Bytes(), nil
 }
 
-func (this *Tx) GetFee() uint64 {
-	return this.CommonOperation.GetFee()
-}
-
 func ValidateSignature(tx CommonOperation) error {
 	_, _, publicKey := tx.getSourceInfo()
 	return checkSignature(publicKey, tx.getBufferToSign(), tx.getSignature())
 }
 
-func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
-	number, _, publicKey := this.CommonOperation.getSourceInfo()
+func Validate(tx CommonOperation, getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
+	number, _, publicKey := tx.getSourceInfo()
 
 	source := getAccount(number)
 	if source == nil {
@@ -128,7 +124,7 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 		return nil, errors.New("Source account invalid public key")
 	}
 
-	return this.CommonOperation.Validate(getAccount)
+	return tx.validate(getAccount)
 }
 
 func GetRipemd16Hash(tx CommonOperation) []byte {
@@ -188,13 +184,13 @@ func checkSignature(public *crypto.Public, data []byte, signatureSerialized *cry
 	return nil
 }
 
-func (this *Tx) GetMetadata(txIndexInsideBlock uint32, blockIndex uint32, time uint32) TxMetadata {
+func GetMetadata(tx CommonOperation, txIndexInsideBlock uint32, blockIndex uint32, time uint32) TxMetadata {
 	return TxMetadata{
 		BlockIndex: blockIndex,
 		Index:      txIndexInsideBlock,
 		Time:       time,
-		Type:       uint8(this.Type),
-		TxRaw:      utils.Serialize(this),
+		Type:       uint8(tx.GetType()),
+		TxRaw:      utils.Serialize(tx),
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/pasl-project/pasl/blockchain"
+	"github.com/pasl-project/pasl/crypto"
 	"github.com/pasl-project/pasl/network"
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/safebox/tx"
@@ -35,6 +36,7 @@ func (a *Api) GetHandlers() map[string]interface{} {
 		"findoperation":        a.FindOperation,
 		"getaccountoperations": a.GetAccountOperations,
 		"getblockoperations":   a.GetBlockOperations,
+		"getpubkeyaccounts":    a.GetPubKeyAccounts,
 	}
 }
 
@@ -176,4 +178,12 @@ func (this *Api) GetBlockOperations(_ context.Context, params *struct{ Block uin
 		return nil, errors.New("Not found")
 	}
 	return result, nil
+}
+
+func (this *Api) GetPubKeyAccounts(_ context.Context, params *struct{ B58_pubkey string }) ([]uint32, error) {
+	public, err := crypto.PublicFromBase58(params.B58_pubkey)
+	if err != nil {
+		return nil, err
+	}
+	return this.blockchain.GetAccountsByPublicKey(public), nil
 }

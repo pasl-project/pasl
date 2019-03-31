@@ -668,6 +668,26 @@ func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.Tx
 	return nil
 }
 
+func (b *Blockchain) GetAccountsByPublicKey(public *crypto.Public) []uint32 {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
+	accounts := make([]uint32, 0)
+
+	total := b.safebox.GetHeight() * defaults.AccountsPerBlock
+	for current := uint32(0); current < total; current++ {
+		account := b.safebox.GetAccount(current)
+		if account == nil {
+			break
+		}
+		if account.IsPublicKeyEqual(public) {
+			accounts = append(accounts, current)
+		}
+	}
+
+	return accounts
+}
+
 func (this *Blockchain) ExportSafebox() []byte {
 	this.lock.RLock()
 	defer this.lock.RUnlock()

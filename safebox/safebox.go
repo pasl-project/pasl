@@ -85,7 +85,7 @@ func (this *Safebox) SetFork(fork Fork) {
 	this.fork = fork
 }
 
-func (this *Safebox) Validate(operation *tx.Tx) error {
+func (this *Safebox) Validate(operation tx.CommonOperation) error {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
@@ -108,7 +108,7 @@ func (this *Safebox) validateSignatures(operations []tx.Tx) error {
 	for index := range operations {
 		go func(index int) {
 			defer wg.Done()
-			if operations[index].ValidateSignature() != nil {
+			if tx.ValidateSignature(&operations[index]) != nil {
 				atomic.StoreUint32(&invalid, 1)
 			}
 		}(index)

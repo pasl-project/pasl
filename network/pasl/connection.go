@@ -134,10 +134,10 @@ func (this *PascalConnection) BlocksGet(from, to uint32) []safebox.SerializedBlo
 	return blocks
 }
 
-func (this *PascalConnection) BroadcastTx(operation *tx.Tx) {
+func (this *PascalConnection) BroadcastTx(operation tx.CommonOperation) {
 	packet := packetNewOperations{
 		OperationsNetwork: tx.OperationsNetwork{
-			Operations: []tx.Tx{*operation},
+			Operations: []tx.CommonOperation{operation},
 		},
 	}
 	this.underlying.sendRequest(newOperations, utils.Serialize(&packet), nil)

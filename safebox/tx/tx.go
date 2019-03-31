@@ -57,6 +57,7 @@ type CommonOperation interface {
 	Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error)
 
 	Serialize(w io.Writer) error
+	SerializeWithoutPrefix(w io.Writer) error
 
 	getBufferToSign() []byte
 	getSignature() *crypto.SignatureSerialized
@@ -78,7 +79,7 @@ type TxMetadata struct {
 }
 
 type OperationsNetwork struct {
-	Operations []Tx
+	Operations []CommonOperation
 }
 
 func Sign(tx CommonOperation, priv *ecdsa.PrivateKey) (txID string, raw []byte, err error) {
@@ -97,27 +98,23 @@ func Sign(tx CommonOperation, priv *ecdsa.PrivateKey) (txID string, raw []byte, 
 	signature.R = r.Bytes()
 	signature.S = s.Bytes()
 
-	transaction := Tx{
-		Type:            tx.GetType(),
-		CommonOperation: tx,
-	}
 	operations := OperationsNetwork{
-		Operations: []Tx{transaction},
+		Operations: []CommonOperation{tx},
 	}
 	serialized := bytes.NewBuffer(nil)
 	if err := operations.Serialize(serialized); err != nil {
 		return "", nil, err
 	}
-	return transaction.GetTxIdString(), serialized.Bytes(), nil
+	return GetTxIdString(tx), serialized.Bytes(), nil
 }
 
 func (this *Tx) GetFee() uint64 {
 	return this.CommonOperation.GetFee()
 }
 
-func (this *Tx) ValidateSignature() error {
-	_, _, publicKey := this.CommonOperation.getSourceInfo()
-	return checkSignature(publicKey, this.CommonOperation.getBufferToSign(), this.CommonOperation.getSignature())
+func ValidateSignature(tx CommonOperation) error {
+	_, _, publicKey := tx.getSourceInfo()
+	return checkSignature(publicKey, tx.getBufferToSign(), tx.getSignature())
 }
 
 func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
@@ -134,7 +131,7 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 	return this.CommonOperation.Validate(getAccount)
 }
 
-func (this *Tx) GetRipemd16Hash() []byte {
+func GetRipemd16Hash(tx CommonOperation) []byte {
 	type toHash struct {
 		ToSign utils.Serializable
 		R      utils.Serializable
@@ -142,13 +139,13 @@ func (this *Tx) GetRipemd16Hash() []byte {
 	}
 	buffer := utils.Serialize(toHash{
 		ToSign: &utils.BytesWithoutLengthPrefix{
-			Bytes: this.CommonOperation.getBufferToSign(),
+			Bytes: tx.getBufferToSign(),
 		},
 		R: &utils.BytesWithoutLengthPrefix{
-			Bytes: this.getSignature().R,
+			Bytes: tx.getSignature().R,
 		},
 		S: &utils.BytesWithoutLengthPrefix{
-			Bytes: this.getSignature().S,
+			Bytes: tx.getSignature().S,
 		},
 	})
 
@@ -160,27 +157,27 @@ func (this *Tx) GetRipemd16Hash() []byte {
 	return []byte(strings.ToUpper(hex.EncodeToString(hash.Sum([]byte("")))[:20]))
 }
 
-func (this *Tx) GetTxId() []byte {
+func GetTxId(tx CommonOperation) []byte {
 	type txId struct {
 		Reserved    uint32
 		Source      uint32
 		OperationId uint32
 		Hash        utils.Serializable
 	}
-	source, operationID, _ := this.CommonOperation.getSourceInfo()
+	source, operationId, _ := tx.getSourceInfo()
 
 	return utils.Serialize(txId{
 		Reserved:    0,
 		Source:      source,
-		OperationId: operationID,
+		OperationId: operationId,
 		Hash: &utils.BytesWithoutLengthPrefix{
-			Bytes: this.GetRipemd16Hash(),
+			Bytes: GetRipemd16Hash(tx),
 		},
 	})
 }
 
-func (this *Tx) GetTxIdString() string {
-	return hex.EncodeToString(this.GetTxId())
+func GetTxIdString(tx CommonOperation) string {
+	return hex.EncodeToString(GetTxId(tx))
 }
 
 func checkSignature(public *crypto.Public, data []byte, signatureSerialized *crypto.SignatureSerialized) error {
@@ -213,10 +210,6 @@ func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, *Tx, error) {
 	}
 
 	return &metadata, &tx, nil
-}
-
-func (this *Tx) Serialize(w io.Writer) error {
-	return this.SerializeUnderlying(w)
 }
 
 func (this *Tx) SerializeUnderlying(w io.Writer) error {
@@ -257,10 +250,10 @@ func (this *OperationsNetwork) Serialize(w io.Writer) error {
 	}
 
 	for _, each := range this.Operations {
-		if _, err := w.Write(utils.Serialize(uint8(each.Type))); err != nil {
+		if _, err := w.Write(utils.Serialize(uint8(each.GetType()))); err != nil {
 			return err
 		}
-		if err := each.SerializeUnderlying(w); err != nil {
+		if err := each.SerializeWithoutPrefix(w); err != nil {
 			return err
 		}
 	}
@@ -274,7 +267,7 @@ func (this *OperationsNetwork) Deserialize(r io.Reader) error {
 		return err
 	}
 
-	this.Operations = make([]Tx, count)
+	this.Operations = make([]CommonOperation, count)
 
 	var i uint32
 	for i = 0; i < count; i++ {
@@ -282,9 +275,24 @@ func (this *OperationsNetwork) Deserialize(r io.Reader) error {
 		if err := utils.Deserialize(&transactionType, r); err != nil {
 			return err
 		}
-		this.Operations[i].Type = txType(transactionType)
-		if err := this.Operations[i].deserializeUnderlying(r); err != nil {
-			return err
+
+		switch txType(transactionType) {
+		case txTypeTransfer:
+			var tx Transfer
+			if err := utils.Deserialize(&tx, r); err != nil {
+				return err
+			}
+			this.Operations[i] = &tx
+			return nil
+		case txTypeChangekey:
+			var changeKey ChangeKey
+			if err := utils.Deserialize(&changeKey, r); err != nil {
+				return err
+			}
+			this.Operations[i] = &changeKey
+			return nil
+		default:
+			return errors.New("Unknown operation type")
 		}
 	}
 

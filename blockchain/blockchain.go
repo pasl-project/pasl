@@ -264,14 +264,14 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 
 			for index := range operations {
 				txIndexInsideBlock := uint32(index)
-				tx := &operations[txIndexInsideBlock]
+				transaction := &operations[txIndexInsideBlock]
 				txRipemd160Hash := [20]byte{}
-				copy(txRipemd160Hash[:], tx.GetRipemd16Hash())
+				copy(txRipemd160Hash[:], tx.GetRipemd16Hash(transaction))
 				txID, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
 				if err != nil {
 					return err
 				}
-				txMetadata := tx.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
+				txMetadata := transaction.GetMetadata(txIndexInsideBlock, block.GetIndex(), block.GetTimestamp())
 				if err = s.StoreTxMetadata(ctx, txID, utils.Serialize(txMetadata)); err != nil {
 					return err
 				}
@@ -452,11 +452,11 @@ func (this *Blockchain) flushPacks(updatedPacks []uint32) error {
 	})
 }
 
-func (this *Blockchain) TxPoolAddOperation(operation *tx.Tx) (new bool, err error) {
+func (this *Blockchain) TxPoolAddOperation(operation tx.CommonOperation) (new bool, err error) {
 	if err := this.safebox.Validate(operation); err != nil {
 		return false, err
 	}
-	_, exists := this.txPool.LoadOrStore(operation.GetTxIdString(), *operation)
+	_, exists := this.txPool.LoadOrStore(tx.GetTxIdString(operation), operation)
 	return !exists, nil
 }
 
@@ -469,7 +469,7 @@ func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.Tx) {
 		return true
 	})
 	for index, _ := range toRemove {
-		this.txPool.Delete(toRemove[index].GetTxIdString())
+		this.txPool.Delete(tx.GetTxIdString(&toRemove[index]))
 	}
 }
 

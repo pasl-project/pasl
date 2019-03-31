@@ -16,7 +16,7 @@ func TestTxSignBuffer(t *testing.T) {
 	}
 
 	valid, _ := hex.DecodeString("3532454142363930464233383130444234433437")
-	txRipemd160Hash := tx.GetRipemd16Hash()
+	txRipemd160Hash := GetRipemd16Hash(&tx)
 	if !bytes.Equal(valid, txRipemd160Hash) {
 		t.Fatalf("%x != %x", valid, txRipemd160Hash)
 	}

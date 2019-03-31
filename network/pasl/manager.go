@@ -46,7 +46,7 @@ type eventNewBlock struct {
 
 type eventNewOperation struct {
 	event
-	tx.Tx
+	tx.CommonOperation
 }
 
 type syncState int
@@ -118,12 +118,12 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 					}, event.source)
 				}
 			case event := <-manager.onNewOperation:
-				new, err := manager.blockchain.TxPoolAddOperation(&event.Tx)
+				new, err := manager.blockchain.TxPoolAddOperation(event.CommonOperation)
 				if err != nil {
 					utils.Tracef("[P2P %s] Tx validation failed: %v", event.source.logPrefix, err)
 				} else if new {
 					manager.forEachConnection(func(conn *PascalConnection) {
-						conn.BroadcastTx(&event.Tx)
+						conn.BroadcastTx(event.CommonOperation)
 					}, event.source)
 				}
 			case conn := <-manager.closed:

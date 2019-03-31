@@ -225,13 +225,7 @@ func (this *Safebox) GetAccount(number uint32) *accounter.Account {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
-	height := this.accounter.GetHeight()
-	accountPack := number / uint32(defaults.AccountsPerBlock)
-	if accountPack+defaults.MaturationHeight < height {
-		account := *this.accounter.GetAccount(number)
-		return &account
-	}
-	return nil
+	return this.accounter.GetAccount(number)
 }
 
 func getReward(index uint32) uint64 {

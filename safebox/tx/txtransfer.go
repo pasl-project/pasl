@@ -132,3 +132,7 @@ func (this *Transfer) getSourceInfo() (number uint32, operationId uint32, public
 func (this *Transfer) getSignature() *crypto.SignatureSerialized {
 	return &this.Signature
 }
+
+func (this *Transfer) GetType() txType {
+	return txTypeTransfer
+}

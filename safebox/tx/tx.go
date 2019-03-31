@@ -22,10 +22,12 @@ package tx
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"strings"
 
 	"github.com/pasl-project/pasl/accounter"
@@ -43,12 +45,13 @@ const (
 	txTypeChangekey
 )
 
-type commonOperation interface {
+type CommonOperation interface {
 	GetAmount() uint64
 	GetAccount() uint32
 	GetDestAccount() uint32
 	GetFee() uint64
 	GetPayload() []byte
+	GetType() txType
 
 	Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 	Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error)
@@ -63,7 +66,7 @@ type commonOperation interface {
 // TODO: rename to transaction
 type Tx struct {
 	Type txType
-	commonOperation
+	CommonOperation
 }
 
 type TxMetadata struct {
@@ -78,17 +81,47 @@ type OperationsNetwork struct {
 	Operations []Tx
 }
 
+func Sign(tx CommonOperation, priv *ecdsa.PrivateKey) (txID string, raw []byte, err error) {
+	_, _, public := tx.getSourceInfo()
+	public.Curve = priv.Curve
+	public.X = big.NewInt(0).Set(priv.PublicKey.X)
+	public.Y = big.NewInt(0).Set(priv.PublicKey.Y)
+
+	data := tx.getBufferToSign()
+	r, s, err := ecdsa.Sign(rand.Reader, priv, data)
+	if err != nil {
+		return "", nil, err
+	}
+
+	signature := tx.getSignature()
+	signature.R = r.Bytes()
+	signature.S = s.Bytes()
+
+	transaction := Tx{
+		Type:            tx.GetType(),
+		CommonOperation: tx,
+	}
+	operations := OperationsNetwork{
+		Operations: []Tx{transaction},
+	}
+	serialized := bytes.NewBuffer(nil)
+	if err := operations.Serialize(serialized); err != nil {
+		return "", nil, err
+	}
+	return transaction.GetTxIdString(), serialized.Bytes(), nil
+}
+
 func (this *Tx) GetFee() uint64 {
-	return this.commonOperation.GetFee()
+	return this.CommonOperation.GetFee()
 }
 
 func (this *Tx) ValidateSignature() error {
-	_, _, publicKey := this.commonOperation.getSourceInfo()
-	return checkSignature(publicKey, this.commonOperation.getBufferToSign(), this.commonOperation.getSignature())
+	_, _, publicKey := this.CommonOperation.getSourceInfo()
+	return checkSignature(publicKey, this.CommonOperation.getBufferToSign(), this.CommonOperation.getSignature())
 }
 
 func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
-	number, _, publicKey := this.commonOperation.getSourceInfo()
+	number, _, publicKey := this.CommonOperation.getSourceInfo()
 
 	source := getAccount(number)
 	if source == nil {
@@ -98,7 +131,7 @@ func (this *Tx) Validate(getAccount func(number uint32) *accounter.Account) (con
 		return nil, errors.New("Source account invalid public key")
 	}
 
-	return this.commonOperation.Validate(getAccount)
+	return this.CommonOperation.Validate(getAccount)
 }
 
 func (this *Tx) GetRipemd16Hash() []byte {
@@ -109,7 +142,7 @@ func (this *Tx) GetRipemd16Hash() []byte {
 	}
 	buffer := utils.Serialize(toHash{
 		ToSign: &utils.BytesWithoutLengthPrefix{
-			Bytes: this.commonOperation.getBufferToSign(),
+			Bytes: this.CommonOperation.getBufferToSign(),
 		},
 		R: &utils.BytesWithoutLengthPrefix{
 			Bytes: this.getSignature().R,
@@ -134,12 +167,12 @@ func (this *Tx) GetTxId() []byte {
 		OperationId uint32
 		Hash        utils.Serializable
 	}
-	source, operationId, _ := this.commonOperation.getSourceInfo()
+	source, operationID, _ := this.CommonOperation.getSourceInfo()
 
 	return utils.Serialize(txId{
 		Reserved:    0,
 		Source:      source,
-		OperationId: operationId,
+		OperationId: operationID,
 		Hash: &utils.BytesWithoutLengthPrefix{
 			Bytes: this.GetRipemd16Hash(),
 		},
@@ -183,14 +216,11 @@ func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, *Tx, error) {
 }
 
 func (this *Tx) Serialize(w io.Writer) error {
-	if _, err := w.Write(utils.Serialize(&this.Type)); err != nil {
-		return err
-	}
 	return this.SerializeUnderlying(w)
 }
 
 func (this *Tx) SerializeUnderlying(w io.Writer) error {
-	return this.commonOperation.Serialize(w)
+	return this.CommonOperation.Serialize(w)
 }
 
 func (this *Tx) deserializeUnderlying(r io.Reader) error {
@@ -200,14 +230,14 @@ func (this *Tx) deserializeUnderlying(r io.Reader) error {
 		if err := utils.Deserialize(&tx, r); err != nil {
 			return err
 		}
-		this.commonOperation = &tx
+		this.CommonOperation = &tx
 		return nil
 	case txTypeChangekey:
 		var changeKey ChangeKey
 		if err := utils.Deserialize(&changeKey, r); err != nil {
 			return err
 		}
-		this.commonOperation = &changeKey
+		this.CommonOperation = &changeKey
 		return nil
 	default:
 		return errors.New("Unknown operation type")

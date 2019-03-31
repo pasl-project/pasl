@@ -126,3 +126,7 @@ func (this *ChangeKey) getSignature() *crypto.SignatureSerialized {
 func (this *ChangeKey) getSourceInfo() (number uint32, operationId uint32, publicKey *crypto.Public) {
 	return this.Source, this.OperationId, &this.PublicKey
 }
+
+func (this *ChangeKey) GetType() txType {
+	return txTypeChangekey
+}

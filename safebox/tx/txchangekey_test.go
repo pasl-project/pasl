@@ -20,4 +20,17 @@ func TestTxSignBuffer(t *testing.T) {
 	if !bytes.Equal(valid, txRipemd160Hash) {
 		t.Fatalf("%x != %x", valid, txRipemd160Hash)
 	}
+
+	if tx.GetAmount() != 0 {
+		t.FailNow()
+	}
+	if tx.GetDestAccount() != tx.GetAccount() {
+		t.FailNow()
+	}
+	if tx.GetFee() != 0 {
+		t.FailNow()
+	}
+	if !bytes.Equal(tx.GetPayload(), []byte{}) {
+		t.FailNow()
+	}
 }

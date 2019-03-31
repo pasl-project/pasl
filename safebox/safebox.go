@@ -141,7 +141,9 @@ func (s *Safebox) GetUpdatedPacks() []uint32 {
 	return s.accounter.GetUpdatedPacks()
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
+	blockIndex := this.accounter.GetHeight()
+	height := blockIndex + 1
+	reward := getReward(height)
 	for index := range operations {
 		reward += operations[index].GetFee()
 	}
@@ -151,7 +153,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
-		if accountPack+defaults.MaturationHeight < currentHeight {
+		if accountPack+defaults.MaturationHeight < height {
 			return this.accounter.GetAccount(number)
 		}
 		return nil
@@ -167,7 +169,7 @@ func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, o
 		if err != nil {
 			return nil, err
 		}
-		accountsAffected, err := operations[index].Apply(currentHeight, context, this.accounter)
+		accountsAffected, err := operations[index].Apply(blockIndex, context, this.accounter)
 		if err != nil {
 			return nil, err
 		}

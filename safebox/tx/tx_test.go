@@ -24,6 +24,11 @@ func TestSerialize(t *testing.T) {
 	if !bytes.Equal(serializedTx, buf.Bytes()) {
 		t.FailNow()
 	}
+
+	txMetadata := GetMetadata(tx, 0, 0, 0)
+	if txType(txMetadata.Type) != tx.GetType() {
+		t.FailNow()
+	}
 }
 
 func TestSignature(t *testing.T) {

@@ -187,7 +187,9 @@ func GetMetadata(tx CommonOperation, txIndexInsideBlock uint32, blockIndex uint3
 		Index:      txIndexInsideBlock,
 		Time:       time,
 		Type:       uint8(tx.GetType()),
-		TxRaw:      utils.Serialize(tx),
+		TxRaw: utils.Serialize(&TxSerialized{
+			CommonOperation: tx,
+		}),
 	}
 }
 

@@ -55,7 +55,6 @@ type CommonOperation interface {
 
 	Apply(index uint32, context interface{}, accounter *accounter.Accounter) ([]uint32, error)
 
-	Serialize(w io.Writer) error
 	SerializeWithoutPrefix(w io.Writer) error
 
 	getBufferToSign() []byte
@@ -64,9 +63,7 @@ type CommonOperation interface {
 	validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 }
 
-// TODO: rename to transaction
-type Tx struct {
-	Type txType
+type TxSerialized struct {
 	CommonOperation
 }
 
@@ -194,26 +191,34 @@ func GetMetadata(tx CommonOperation, txIndexInsideBlock uint32, blockIndex uint3
 	}
 }
 
-func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, *Tx, error) {
+func TxFromMetadata(metadataSerialized []byte) (*TxMetadata, CommonOperation, error) {
 	var metadata TxMetadata
 	if err := utils.Deserialize(&metadata, bytes.NewBuffer(metadataSerialized)); err != nil {
 		return nil, nil, err
 	}
 
-	var tx Tx
+	var tx TxSerialized
 	if err := tx.Deserialize(bytes.NewBuffer(metadata.TxRaw)); err != nil {
 		return nil, nil, fmt.Errorf("Failed to deserialize tx: %v", err)
 	}
 
-	return &metadata, &tx, nil
+	return &metadata, tx.CommonOperation, nil
 }
 
-func (this *Tx) SerializeUnderlying(w io.Writer) error {
-	return this.CommonOperation.Serialize(w)
+func (this *TxSerialized) Serialize(w io.Writer) error {
+	if _, err := w.Write(utils.Serialize(this.GetType())); err != nil {
+		return err
+	}
+	return this.SerializeWithoutPrefix(w)
 }
 
-func (this *Tx) deserializeUnderlying(r io.Reader) error {
-	switch this.Type {
+func (this *TxSerialized) Deserialize(r io.Reader) error {
+	var transactionType txType
+	if err := utils.Deserialize(&transactionType, r); err != nil {
+		return err
+	}
+
+	switch transactionType {
 	case txTypeTransfer:
 		var tx Transfer
 		if err := utils.Deserialize(&tx, r); err != nil {
@@ -229,15 +234,18 @@ func (this *Tx) deserializeUnderlying(r io.Reader) error {
 		this.CommonOperation = &changeKey
 		return nil
 	default:
-		return errors.New("Unknown operation type")
 	}
+	return errors.New("Unknown operation type")
 }
 
-func (this *Tx) Deserialize(r io.Reader) error {
-	if err := utils.Deserialize(&this.Type, r); err != nil {
-		return err
+func ToTxSerialized(txes []CommonOperation) []TxSerialized {
+	result := make([]TxSerialized, 0, len(txes))
+	for each := range txes {
+		result = append(result, TxSerialized{
+			CommonOperation: txes[each],
+		})
 	}
-	return this.deserializeUnderlying(r)
+	return result
 }
 
 func (this *OperationsNetwork) Serialize(w io.Writer) error {

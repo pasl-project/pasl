@@ -47,11 +47,11 @@ type SerializedBlockHeader struct {
 
 type SerializedBlock struct {
 	Header     SerializedBlockHeader
-	Operations []tx.Tx
+	Operations []tx.TxSerialized
 }
 
 type SerializedOperations struct {
-	Operations []tx.Tx
+	Operations []tx.TxSerialized
 }
 
 type BlockBase interface {
@@ -67,7 +67,7 @@ type BlockBase interface {
 	GetPayload() []byte
 	GetPrevSafeBoxHash() []byte
 	GetOperationsHash() []byte
-	GetOperations() []tx.Tx
+	GetOperations() []tx.CommonOperation
 }
 
 type BlockMetadata struct {
@@ -79,14 +79,14 @@ type BlockMetadata struct {
 	Nonce           uint32
 	Payload         []byte
 	PrevSafeBoxHash []byte
-	Operations      []tx.Tx
+	Operations      []tx.TxSerialized
 }
 
 type Block struct {
 	Meta           *BlockMetadata
 	Miner          *crypto.Public
 	Target         common.TargetBase
-	Operations     []tx.Tx
+	Operations     []tx.CommonOperation
 	OperationsHash [32]byte
 	Fee            uint64
 	Reward         uint64
@@ -100,11 +100,11 @@ type blockHashBuffer struct {
 	Timestamp uint32
 }
 
-func GetOperationsHash(operations []tx.Tx) [32]byte {
+func GetOperationsHash(operations []tx.CommonOperation) [32]byte {
 	hash := sha256.Sum256([]byte(""))
 	for index := range operations {
 		h := sha256.New()
-		operations[index].SerializeUnderlying(h)
+		operations[index].SerializeWithoutPrefix(h)
 		hash = sha256.Sum256(h.Sum(hash[:]))
 	}
 	return hash
@@ -112,7 +112,7 @@ func GetOperationsHash(operations []tx.Tx) [32]byte {
 
 func NewBlock(meta *BlockMetadata) (BlockBase, error) {
 	fee := uint64(0)
-	operations := make([]tx.Tx, len(meta.Operations))
+	operations := make([]tx.CommonOperation, len(meta.Operations))
 
 	for index := range meta.Operations {
 		operations[index] = meta.Operations[index]
@@ -207,6 +207,6 @@ func (block *Block) GetOperationsHash() []byte {
 	return block.OperationsHash[:]
 }
 
-func (this *Block) GetOperations() []tx.Tx {
+func (this *Block) GetOperations() []tx.CommonOperation {
 	return this.Operations
 }

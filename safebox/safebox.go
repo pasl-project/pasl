@@ -101,14 +101,14 @@ func (this *Safebox) Validate(operation tx.CommonOperation) error {
 	return err
 }
 
-func (this *Safebox) validateSignatures(operations []tx.Tx) error {
+func (this *Safebox) validateSignatures(operations []tx.CommonOperation) error {
 	wg := &sync.WaitGroup{}
 	invalid := uint32(0)
 	wg.Add(len(operations))
 	for index := range operations {
 		go func(index int) {
 			defer wg.Done()
-			if tx.ValidateSignature(&operations[index]) != nil {
+			if tx.ValidateSignature(operations[index]) != nil {
 				atomic.StoreUint32(&invalid, 1)
 			}
 		}(index)
@@ -141,12 +141,7 @@ func (s *Safebox) GetUpdatedPacks() []uint32 {
 	return s.accounter.GetUpdatedPacks()
 }
 
-func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.Tx, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
-	this.lock.Lock()
-	defer this.lock.Unlock()
-
-	currentHeight := this.accounter.GetHeight()
-	reward := getReward(currentHeight)
+func (this *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
 	for index := range operations {
 		reward += operations[index].GetFee()
 	}

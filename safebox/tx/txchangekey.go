@@ -99,13 +99,6 @@ func (this *ChangeKey) Apply(index uint32, context interface{}, accounter *accou
 	return []uint32{this.Source}, nil
 }
 
-func (this *ChangeKey) Serialize(w io.Writer) error {
-	if _, err := w.Write(utils.Serialize(this.GetType())); err != nil {
-		return err
-	}
-	return this.SerializeWithoutPrefix(w)
-}
-
 func (this *ChangeKey) SerializeWithoutPrefix(w io.Writer) error {
 	_, err := w.Write(utils.Serialize(this))
 	return err

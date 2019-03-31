@@ -264,7 +264,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 
 			for index := range operations {
 				txIndexInsideBlock := uint32(index)
-				transaction := &operations[txIndexInsideBlock]
+				transaction := operations[txIndexInsideBlock]
 				txRipemd160Hash := [20]byte{}
 				copy(txRipemd160Hash[:], tx.GetRipemd16Hash(transaction))
 				txID, err := s.StoreTxHash(ctx, txRipemd160Hash, block.GetIndex(), txIndexInsideBlock)
@@ -460,16 +460,16 @@ func (this *Blockchain) TxPoolAddOperation(operation tx.CommonOperation) (new bo
 	return !exists, nil
 }
 
-func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.Tx) {
+func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.CommonOperation) {
 	this.txPool.Range(func(txId, value interface{}) bool {
-		transaction := value.(tx.Tx)
-		if err := this.safebox.Validate(&transaction); err != nil {
+		transaction := value.(tx.CommonOperation)
+		if err := this.safebox.Validate(transaction); err != nil {
 			toRemove = append(toRemove, transaction)
 		}
 		return true
 	})
 	for index, _ := range toRemove {
-		this.txPool.Delete(tx.GetTxIdString(&toRemove[index]))
+		this.txPool.Delete(tx.GetTxIdString(toRemove[index]))
 	}
 }
 
@@ -518,7 +518,7 @@ func (this *Blockchain) SerializeBlockHeader(block safebox.BlockBase, willAppend
 func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.SerializedBlock {
 	return safebox.SerializedBlock{
 		Header:     this.SerializeBlockHeader(block, true, false),
-		Operations: block.GetOperations(),
+		Operations: tx.ToTxSerialized(block.GetOperations()),
 	}
 }
 
@@ -542,14 +542,14 @@ func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
 	return this.getPendingBlock(nil, []byte(""), blockTimestamp)
 }
 
-func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx *tx.Tx) bool) {
+func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx tx.CommonOperation) bool) {
 	i := uint32(0)
 	time := uint32(time.Now().Unix())
 	this.txPool.Range(func(key, value interface{}) bool {
-		transaction := value.(tx.Tx)
+		transaction := value.(tx.CommonOperation)
 		meta := tx.GetMetadata(transaction, i, 0, time)
 		i += 1
-		return fn(&meta, &transaction)
+		return fn(&meta, transaction)
 	})
 }
 
@@ -563,10 +563,9 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, ti
 
 	height, safeboxHash, _ := this.safebox.GetState()
 
-	operations := make([]tx.Tx, 0)
+	txes := make([]tx.CommonOperation, 0)
 	this.txPool.Range(func(key, value interface{}) bool {
-		tx := value.(tx.Tx)
-		operations = append(operations, tx)
+		txes = append(txes, value.(tx.CommonOperation))
 		return true
 	})
 	block, err := safebox.NewBlock(&safebox.BlockMetadata{
@@ -581,7 +580,7 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, ti
 		Nonce:           0,
 		Payload:         payload,
 		PrevSafeBoxHash: safeboxHash,
-		Operations:      operations,
+		Operations:      tx.ToTxSerialized(txes),
 	})
 	if err != nil {
 		utils.Tracef("Error %s", err.Error())
@@ -624,7 +623,7 @@ func (this *Blockchain) GetAccount(number uint32) *accounter.Account {
 	return this.safebox.GetAccount(number)
 }
 
-func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, *tx.Tx, error) {
+func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, tx.CommonOperation, error) {
 	metadataSerialized, err := this.storage.GetTxMetadata(txRipemd160Hash)
 	if err != nil {
 		return nil, nil, err
@@ -633,7 +632,7 @@ func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, 
 	return tx.TxFromMetadata(metadataSerialized)
 }
 
-func (this *Blockchain) AccountOperationsForEach(number uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx *tx.Tx) bool) error {
+func (this *Blockchain) AccountOperationsForEach(number uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
 	serializedTxes, err := this.storage.GetAccountTxesData(number)
 	if err != nil {
 		return err
@@ -652,7 +651,7 @@ func (this *Blockchain) AccountOperationsForEach(number uint32, fn func(operatio
 	return nil
 }
 
-func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.TxMetadata, tx *tx.Tx) bool) error {
+func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
 	block := this.GetBlock(index)
 	if block == nil {
 		return fmt.Errorf("Failed to get block %d", index)
@@ -661,7 +660,7 @@ func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.Tx
 	operations := block.GetOperations()
 	for index, _ := range operations {
 		meta := tx.GetMetadata(operations[index], uint32(index), block.GetIndex(), block.GetTimestamp())
-		if !fn(&meta, &operations[index]) {
+		if !fn(&meta, operations[index]) {
 			return nil
 		}
 	}

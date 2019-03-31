@@ -106,13 +106,6 @@ func (this *Transfer) Apply(index uint32, context interface{}, accounter *accoun
 	return []uint32{this.Source, this.Destination}, nil
 }
 
-func (this *Transfer) Serialize(w io.Writer) error {
-	if _, err := w.Write(utils.Serialize(this.GetType())); err != nil {
-		return err
-	}
-	return this.SerializeWithoutPrefix(w)
-}
-
 func (this *Transfer) SerializeWithoutPrefix(w io.Writer) error {
 	_, err := w.Write(utils.Serialize(this))
 	return err

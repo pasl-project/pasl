@@ -109,7 +109,7 @@ func txToNetwork(meta *tx.TxMetadata, transaction tx.CommonOperation) network.Op
 
 func (this *Api) GetPending(_ context.Context) ([]network.Operation, error) {
 	response := make([]network.Operation, 0)
-	this.blockchain.TxPoolForEach(func(meta *tx.TxMetadata, tx *tx.Tx) bool {
+	this.blockchain.TxPoolForEach(func(meta *tx.TxMetadata, tx tx.CommonOperation) bool {
 		response = append(response, txToNetwork(meta, tx))
 		return true
 	})
@@ -131,7 +131,7 @@ func (this *Api) ExecuteOperations(_ context.Context, params *struct{ RawOperati
 
 	any := false
 	for _, tx := range operationsSet.Operations {
-		_, err := this.blockchain.TxPoolAddOperation(&tx)
+		_, err := this.blockchain.TxPoolAddOperation(tx)
 		if err != nil {
 			utils.Tracef("Error: %v", err)
 		} else if !any {
@@ -160,7 +160,7 @@ func (this *Api) FindOperation(_ context.Context, params *struct{ Ophash string 
 
 func (this *Api) GetAccountOperations(_ context.Context, params *struct{ Account uint32 }) ([]network.Operation, error) {
 	result := make([]network.Operation, 0)
-	if err := this.blockchain.AccountOperationsForEach(params.Account, func(operationId uint32, meta *tx.TxMetadata, tx *tx.Tx) bool {
+	if err := this.blockchain.AccountOperationsForEach(params.Account, func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool {
 		result = append(result, txToNetwork(meta, tx))
 		return true
 	}); err != nil {
@@ -171,7 +171,7 @@ func (this *Api) GetAccountOperations(_ context.Context, params *struct{ Account
 
 func (this *Api) GetBlockOperations(_ context.Context, params *struct{ Block uint32 }) ([]network.Operation, error) {
 	result := make([]network.Operation, 0)
-	if err := this.blockchain.BlockOperationsForEach(params.Block, func(meta *tx.TxMetadata, tx *tx.Tx) bool {
+	if err := this.blockchain.BlockOperationsForEach(params.Block, func(meta *tx.TxMetadata, tx tx.CommonOperation) bool {
 		result = append(result, txToNetwork(meta, tx))
 		return true
 	}); err != nil {

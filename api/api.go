@@ -6,14 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 
-	"github.com/pasl-project/pasl/safebox/tx"
-
-	"github.com/pasl-project/pasl/safebox"
-
 	"github.com/pasl-project/pasl/blockchain"
-	"github.com/pasl-project/pasl/utils"
-
 	"github.com/pasl-project/pasl/network"
+	"github.com/pasl-project/pasl/safebox"
+	"github.com/pasl-project/pasl/safebox/tx"
+	"github.com/pasl-project/pasl/utils"
 )
 
 type Api struct {
@@ -28,12 +25,25 @@ func NewApi(blockchain *blockchain.Blockchain) *Api {
 	}
 }
 
-func (this *Api) GetBlockCount(ctx context.Context) (int, error) {
+func (a *Api) GetHandlers() map[string]interface{} {
+	return map[string]interface{}{
+		"getblockcount":        a.GetBlockCount,
+		"getblock":             a.GetBlock,
+		"getaccount":           a.GetAccount,
+		"getpendings":          a.GetPending,
+		"executeoperations":    a.ExecuteOperations,
+		"findoperation":        a.FindOperation,
+		"getaccountoperations": a.GetAccountOperations,
+		"getblockoperations":   a.GetBlockOperations,
+	}
+}
+
+func (this *Api) GetBlockCount(context.Context) (int, error) {
 	height := this.blockchain.GetHeight()
 	return int(height), nil
 }
 
-func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (*network.Block, error) {
+func (this *Api) GetBlock(_ context.Context, params *struct{ Block uint32 }) (*network.Block, error) {
 	blockMeta := this.blockchain.GetBlock(params.Block)
 	if blockMeta == nil {
 		return nil, errors.New("Not found")
@@ -64,7 +74,7 @@ func (this *Api) GetBlock(ctx context.Context, params *struct{ Block uint32 }) (
 	}, nil
 }
 
-func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 }) (*network.Account, error) {
+func (this *Api) GetAccount(_ context.Context, params *struct{ Account uint32 }) (*network.Account, error) {
 	account := this.blockchain.GetAccount(params.Account)
 	if account == nil {
 		return nil, errors.New("Not found")
@@ -78,24 +88,24 @@ func (this *Api) GetAccount(ctx context.Context, params *struct{ Account uint32 
 	}, nil
 }
 
-func txToNetwork(meta *tx.TxMetadata, tx *tx.Tx) network.Operation {
+func txToNetwork(meta *tx.TxMetadata, transaction tx.CommonOperation) network.Operation {
 	return network.Operation{
-		Account:        tx.GetAccount(),
-		Amount:         float64(tx.GetAmount()) / -10000,
+		Account:        transaction.GetAccount(),
+		Amount:         float64(transaction.GetAmount()) / -10000,
 		Block:          meta.BlockIndex,
-		Dest_account:   tx.GetDestAccount(),
-		Fee:            float64(tx.GetFee()) / 10000,
+		Dest_account:   transaction.GetDestAccount(),
+		Fee:            float64(transaction.GetFee()) / 10000,
 		Opblock:        meta.Index, // TODO: consider to drop the field
-		Ophash:         tx.GetTxIdString(),
+		Ophash:         tx.GetTxIdString(transaction),
 		Optxt:          nil,
-		Optype:         uint8(tx.Type),
-		Payload:        hex.EncodeToString(tx.GetPayload()),
-		Sender_account: tx.GetAccount(),
+		Optype:         uint8(transaction.GetType()),
+		Payload:        hex.EncodeToString(transaction.GetPayload()),
+		Sender_account: transaction.GetAccount(),
 		Time:           meta.Time,
 	}
 }
 
-func (this *Api) GetPending(ctx context.Context) ([]network.Operation, error) {
+func (this *Api) GetPending(_ context.Context) ([]network.Operation, error) {
 	response := make([]network.Operation, 0)
 	this.blockchain.TxPoolForEach(func(meta *tx.TxMetadata, tx *tx.Tx) bool {
 		response = append(response, txToNetwork(meta, tx))
@@ -104,7 +114,7 @@ func (this *Api) GetPending(ctx context.Context) ([]network.Operation, error) {
 	return response, nil
 }
 
-func (this *Api) ExecuteOperations(ctx context.Context, params *struct{ RawOperations string }) (bool, error) {
+func (this *Api) ExecuteOperations(_ context.Context, params *struct{ RawOperations string }) (bool, error) {
 	rawOperations, err := hex.DecodeString(params.RawOperations)
 	if err != nil {
 		utils.Tracef("Error: %v", err)
@@ -130,7 +140,7 @@ func (this *Api) ExecuteOperations(ctx context.Context, params *struct{ RawOpera
 	return true, nil
 }
 
-func (this *Api) FindOperation(ctx context.Context, params *struct{ Ophash string }) (*network.Operation, error) {
+func (this *Api) FindOperation(_ context.Context, params *struct{ Ophash string }) (*network.Operation, error) {
 	ophash, err := hex.DecodeString(params.Ophash)
 	if err != nil {
 		return nil, errors.New("Failed to decode ophash")
@@ -146,7 +156,7 @@ func (this *Api) FindOperation(ctx context.Context, params *struct{ Ophash strin
 	}
 }
 
-func (this *Api) GetAccountOperations(ctx context.Context, params *struct{ Account uint32 }) ([]network.Operation, error) {
+func (this *Api) GetAccountOperations(_ context.Context, params *struct{ Account uint32 }) ([]network.Operation, error) {
 	result := make([]network.Operation, 0)
 	if err := this.blockchain.AccountOperationsForEach(params.Account, func(operationId uint32, meta *tx.TxMetadata, tx *tx.Tx) bool {
 		result = append(result, txToNetwork(meta, tx))
@@ -157,7 +167,7 @@ func (this *Api) GetAccountOperations(ctx context.Context, params *struct{ Accou
 	return result, nil
 }
 
-func (this *Api) GetBlockOperations(ctx context.Context, params *struct{ Block uint32 }) ([]network.Operation, error) {
+func (this *Api) GetBlockOperations(_ context.Context, params *struct{ Block uint32 }) ([]network.Operation, error) {
 	result := make([]network.Operation, 0)
 	if err := this.blockchain.BlockOperationsForEach(params.Block, func(meta *tx.TxMetadata, tx *tx.Tx) bool {
 		result = append(result, txToNetwork(meta, tx))

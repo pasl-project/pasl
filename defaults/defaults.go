@@ -35,7 +35,7 @@ const (
 	BootstrapNodes          string        = "pascallite.ddns.net:4004,pascallite2.ddns.net:4004,pascallite3.ddns.net:4004,pascallite4.dynamic-dns.net:4004,pascallite5.dynamic-dns.net:4004,pascallite.dynamic-dns.net:4004,pascallite2.dynamic-dns.net:4004,pascallite3.dynamic-dns.net:4004"
 	P2PBindAddress          string        = "0.0.0.0"
 	P2PPort                 uint16        = 4004
-	RPCBindAddress          string        = "127.0.0.1"
+	RPCBindHost             string        = "127.0.0.1"
 	RPCPort                 uint16        = 4003
 	TimeoutConnect          time.Duration = time.Duration(10) * time.Second
 	TimeoutRequest          time.Duration = time.Duration(60) * time.Second

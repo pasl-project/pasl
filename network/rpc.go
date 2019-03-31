@@ -47,7 +47,7 @@ func (this *httpFrame) Close() error {
 	return this.w.Close()
 }
 
-func WithRpcServer(hostPort string, api API, callback func() error) error {
+func WithRpcServer(hostPort string, handlers map[string]interface{}, callback func() error) error {
 	listener, err := net.Listen("tcp", hostPort)
 	if err != nil {
 		return err
@@ -55,15 +55,10 @@ func WithRpcServer(hostPort string, api API, callback func() error) error {
 
 	rpcServer := concurrent.NewUnboundedExecutor()
 	rpcServer.Go(func(ctx context.Context) {
-		assigner := jrpc2.MapAssigner{
-			"getblockcount":        jrpc2.NewHandler(api.GetBlockCount),
-			"getblock":             jrpc2.NewHandler(api.GetBlock),
-			"getaccount":           jrpc2.NewHandler(api.GetAccount),
-			"getpendings":          jrpc2.NewHandler(api.GetPending),
-			"executeoperations":    jrpc2.NewHandler(api.ExecuteOperations),
-			"findoperation":        jrpc2.NewHandler(api.FindOperation),
-			"getaccountoperations": jrpc2.NewHandler(api.GetAccountOperations),
-			"getblockoperations":   jrpc2.NewHandler(api.GetBlockOperations),
+
+		assigner := jrpc2.MapAssigner{}
+		for each := range handlers {
+			assigner[each] = jrpc2.NewHandler(handlers[each])
 		}
 
 		headers := http.Header{}

@@ -219,7 +219,10 @@ func run(cliContext *cli.Context) error {
 					defer updatesListener.StopAndWaitForever()
 				}
 
-				return network.WithRpcServer(fmt.Sprintf("%s:%d", defaults.RPCBindAddress, defaults.RPCPort), api.NewApi(blockchain), func() error {
+				coreRPC := api.NewApi(blockchain)
+				RPCBindAddress := fmt.Sprintf("%s:%d", defaults.RPCBindHost, defaults.RPCPort)
+				RPCHandlers := coreRPC.GetHandlers()
+				return network.WithRpcServer(RPCBindAddress, RPCHandlers, func() error {
 					c := make(chan os.Signal, 1)
 					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 					<-c

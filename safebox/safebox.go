@@ -131,6 +131,10 @@ func (s *Safebox) Rollback() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
+	s.rollbackUnsafe()
+}
+
+func (s *Safebox) rollbackUnsafe() {
 	s.accounter.Rollback()
 }
 
@@ -141,6 +145,7 @@ func (s *Safebox) GetUpdatedPacks() []uint32 {
 	return s.accounter.GetUpdatedPacks()
 }
 
+func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
 	blockIndex := this.accounter.GetHeight()
 	height := blockIndex + 1
 	reward := getReward(height)
@@ -183,6 +188,17 @@ func (s *Safebox) GetUpdatedPacks() []uint32 {
 	}
 
 	return affectedByTxes, nil
+}
+
+func (s *Safebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	affectedByTxes, err := s.processOperationsUnsafe(miner, timestamp, operations, difficulty)
+	if err != nil {
+		s.rollbackUnsafe()
+	}
+	return affectedByTxes, err
 }
 
 func (this *Safebox) GetLastTimestamps(count uint32) (timestamps []uint32) {

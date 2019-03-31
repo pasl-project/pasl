@@ -331,7 +331,6 @@ func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSa
 	defer this.lock.Unlock()
 
 	if err := this.processNewBlocksUnsafe(blocks, preSave); err != nil {
-		this.safebox.Rollback()
 		return err
 	}
 	this.safebox.Merge()

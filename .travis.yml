@@ -8,6 +8,7 @@ install:
   - go get golang.org/x/tools/cmd/cover
   - go get github.com/mattn/goveralls
   - go get -u github.com/haya14busa/goverage
+  - go vet ./...
 
 script:
   - goverage -v -covermode=count -coverprofile=coverage.out ./...

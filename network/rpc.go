@@ -62,6 +62,7 @@ func WithRpcServer(hostPort string, handlers map[string]interface{}, callback fu
 		}
 
 		headers := http.Header{}
+		headers.Add("Access-Control-Allow-Origin", "*")
 		headers.Add("Content-Type", "application/json")
 
 		server.Loop(listener, assigner, &server.LoopOptions{

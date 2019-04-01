@@ -289,14 +289,12 @@ func (this *OperationsNetwork) Deserialize(r io.Reader) error {
 				return err
 			}
 			this.Operations[i] = &tx
-			return nil
 		case txTypeChangekey:
 			var changeKey ChangeKey
 			if err := utils.Deserialize(&changeKey, r); err != nil {
 				return err
 			}
 			this.Operations[i] = &changeKey
-			return nil
 		default:
 			return errors.New("Unknown operation type")
 		}

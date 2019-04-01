@@ -12,7 +12,7 @@ Copyright (c) 2018 PASL Project
 
 ## Dependencies
 
-* Go >=1.9 <https://golang.org/doc/install>
+* Go >= 1.10 <https://golang.org/doc/install>
 
 ## Checkout project's repository
 

@@ -183,16 +183,20 @@ func run(cliContext *cli.Context) error {
 						}
 					}
 				} else {
-					s.LoadPeers(func(address []byte, data []byte) {
-						if err = node.AddPeerSerialized("tcp", data); err != nil {
-							utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
+					populatePeers := concurrent.NewUnboundedExecutor()
+					populatePeers.Go(func(ctx context.Context) {
+						s.LoadPeers(func(address []byte, data []byte) {
+							if err = node.AddPeerSerialized("tcp", data); err != nil {
+								utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
+							}
+						})
+						for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
+							if err = node.AddPeer("tcp", hostPort); err != nil {
+								utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
+							}
 						}
 					})
-					for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-						if err = node.AddPeer("tcp", hostPort); err != nil {
-							utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
-						}
-					}
+					defer populatePeers.StopAndWaitForever()
 					defer func() {
 						peers := node.GetPeersByNetwork("tcp")
 						s.WithWritable(func(s storage.StorageWritable, ctx interface{}) error {

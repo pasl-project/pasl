@@ -71,7 +71,7 @@ type Storage interface {
 	LoadPeers(peers func(address []byte, data []byte)) error
 	GetBlock(index uint32) (data []byte, err error)
 	GetTxMetadata(txRipemd160Hash [20]byte) (data []byte, err error)
-	GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error)
+	GetAccountTxesData(number uint32, offset uint32, limit uint32) (txData map[uint32][]byte, err error)
 }
 
 type StorageBoltDb struct {
@@ -474,7 +474,7 @@ func (this *StorageBoltDb) GetTxMetadata(txRipemd160Hash [20]byte) (metadata []b
 	return
 }
 
-func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+func (this *StorageBoltDb) GetAccountTxesData(number uint32, offset uint32, limit uint32) (txData map[uint32][]byte, err error) {
 	txData = make(map[uint32][]byte)
 	return txData, this.db.View(func(tx *bolt.Tx) error {
 		var bucket *bolt.Bucket
@@ -490,7 +490,7 @@ func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32]
 		var current uint32
 		var operationId uint32
 		c := bucket.Cursor()
-		for k, v := c.Seek(buf[:]); k != nil; k, v = c.Next() {
+		for k, v := c.Seek(buf[:]); limit > 0 && k != nil; k, v = c.Next() {
 			numberAndId := bytes.NewBuffer(k)
 			if err := binary.Read(numberAndId, binary.BigEndian, &current); err != nil {
 				utils.Panicf("Failed to unpack account number: %v", err)
@@ -501,7 +501,10 @@ func (this *StorageBoltDb) GetAccountTxesData(number uint32) (txData map[uint32]
 			if current != number {
 				break
 			}
-			txIds[operationId] = binary.BigEndian.Uint64(v)
+			if operationId >= offset {
+				txIds[operationId] = binary.BigEndian.Uint64(v)
+				limit--
+			}
 		}
 
 		for operationId, txId := range txIds {

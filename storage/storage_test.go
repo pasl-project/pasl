@@ -90,7 +90,7 @@ func TestWriteRead(t *testing.T) {
 		}
 
 		{
-			txesData, err := s.GetAccountTxesData(number)
+			txesData, err := s.GetAccountTxesData(number, 0, 1)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -158,9 +158,25 @@ func (this *Api) FindOperation(_ context.Context, params *struct{ Ophash string 
 	}
 }
 
-func (this *Api) GetAccountOperations(_ context.Context, params *struct{ Account uint32 }) ([]network.Operation, error) {
-	result := make([]network.Operation, 0)
-	if err := this.blockchain.AccountOperationsForEach(params.Account, func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool {
+func (this *Api) GetAccountOperations(_ context.Context, params *struct {
+	Account uint32
+	Offset  *uint32
+	Limit   uint32
+}) ([]network.Operation, error) {
+	account := this.blockchain.GetAccount(params.Account)
+	if account == nil {
+		return nil, errors.New("Not found")
+	}
+
+	limit := utils.MaxUint32(params.Limit, 100)
+	var offset uint32
+	if params.Offset != nil {
+		offset = utils.MinUint32(account.GetOperationsTotal(), *params.Offset)
+	} else {
+		offset = utils.MaxUint32(account.GetOperationsTotal(), limit) - limit
+	}
+	result := make([]network.Operation, 0, limit)
+	if err := this.blockchain.AccountOperationsForEach(params.Account, offset, limit, func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool {
 		result = append(result, txToNetwork(meta, tx))
 		return true
 	}); err != nil {

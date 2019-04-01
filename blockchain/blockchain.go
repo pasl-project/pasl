@@ -631,14 +631,14 @@ func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, 
 	return tx.TxFromMetadata(metadataSerialized)
 }
 
-func (this *Blockchain) AccountOperationsForEach(number uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
-	serializedTxes, err := this.storage.GetAccountTxesData(number)
+func (this *Blockchain) AccountOperationsForEach(number uint32, offset uint32, limit uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
+	serializedTxes, err := this.storage.GetAccountTxesData(number, offset, limit)
 	if err != nil {
 		return err
 	}
 
 	for operationId, _ := range serializedTxes {
-		if meta, tx, err := tx.TxFromMetadata(serializedTxes[operationId]); err != nil {
+		if meta, tx, err := tx.TxFromMetadata(serializedTxes[operationId]); err == nil {
 			if !fn(operationId, meta, tx) {
 				return nil
 			}

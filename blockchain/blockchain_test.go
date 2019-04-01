@@ -47,7 +47,7 @@ func (storage *MemoryStorage) GetBlock(index uint32) (data []byte, err error) {
 func (storage *MemoryStorage) GetTxMetadata(txRipemd160Hash [20]byte) (data []byte, err error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (storage *MemoryStorage) GetAccountTxesData(number uint32) (txData map[uint32][]byte, err error) {
+func (storage *MemoryStorage) GetAccountTxesData(number uint32, offset uint32, limit uint32) (txData map[uint32][]byte, err error) {
 	return nil, fmt.Errorf("not implemented")
 }
 func (storage *MemoryStorage) WithWritable(fn func(storageWritable storage.StorageWritable, context interface{}) error) error {

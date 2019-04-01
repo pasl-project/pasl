@@ -133,13 +133,13 @@ func (this *Api) ExecuteOperations(_ context.Context, params *struct{ RawOperati
 	for _, tx := range operationsSet.Operations {
 		_, err := this.blockchain.TxPoolAddOperation(tx)
 		if err != nil {
-			utils.Tracef("Error: %v", err)
+			utils.Tracef("error: %v", err)
 		} else if !any {
 			any = true
 		}
 	}
 
-	return true, nil
+	return any, nil
 }
 
 func (this *Api) FindOperation(_ context.Context, params *struct{ Ophash string }) (*network.Operation, error) {

@@ -52,6 +52,7 @@ type Blockchain struct {
 	lock                sync.RWMutex
 	target              common.TargetBase
 	blocksSinceSnapshot uint32
+	TxPoolUpdates       chan tx.CommonOperation
 }
 
 type blockInfo struct {
@@ -120,6 +121,7 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 		safebox:             safeboxInstance,
 		target:              common.NewTarget(nextTarget),
 		blocksSinceSnapshot: 0,
+		TxPoolUpdates:       make(chan tx.CommonOperation),
 	}
 
 	return blockchain
@@ -317,10 +319,6 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		return err
 	}
 
-	for _, block := range blocksProcessed {
-		this.txPoolCleanUpUnsafe(block.GetOperations())
-	}
-
 	this.target = currentTarget
 
 	return nil
@@ -330,10 +328,15 @@ func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSa
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
+	this.safebox.Rollback()
+	defer this.txPoolApplyAndInvalidateUnsafe()
+
 	if err := this.processNewBlocksUnsafe(blocks, preSave); err != nil {
 		return err
 	}
+
 	this.safebox.Merge()
+
 	return nil
 }
 
@@ -451,12 +454,37 @@ func (this *Blockchain) flushPacks(updatedPacks []uint32) error {
 	})
 }
 
-func (this *Blockchain) TxPoolAddOperation(operation tx.CommonOperation) (new bool, err error) {
-	if err := this.safebox.Validate(operation); err != nil {
+func (b *Blockchain) TxPoolAddOperation(transaction tx.CommonOperation, broadcast bool) (new bool, err error) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	return b.txPoolAddOperationUnsafe(transaction, broadcast)
+}
+
+func (b *Blockchain) txPoolAddOperationUnsafe(transaction tx.CommonOperation, broadcast bool) (new bool, err error) {
+	_, exists := b.txPool.Load(tx.GetTxIdString(transaction))
+	if exists {
+		return false, nil
+	}
+
+	if _, err := b.safebox.ProcessOperations(nil, 0, []tx.CommonOperation{transaction}, nil); err != nil {
 		return false, err
 	}
-	_, exists := this.txPool.LoadOrStore(tx.GetTxIdString(operation), operation)
+	_, exists = b.txPool.LoadOrStore(tx.GetTxIdString(transaction), transaction)
+	if broadcast && !exists {
+		b.TxPoolUpdates <- transaction
+	}
 	return !exists, nil
+}
+
+func (b *Blockchain) txPoolApplyAndInvalidateUnsafe() {
+	oldTxPool := &b.txPool
+	b.txPool = sync.Map{}
+	oldTxPool.Range(func(_, value interface{}) bool {
+		transaction := value.(tx.CommonOperation)
+		b.txPoolAddOperationUnsafe(transaction, true)
+		return true
+	})
 }
 
 func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.CommonOperation) {

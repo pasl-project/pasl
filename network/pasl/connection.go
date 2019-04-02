@@ -148,8 +148,6 @@ func (this *PascalConnection) BroadcastBlock(block *safebox.SerializedBlock) {
 }
 
 func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []byte) error {
-	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
-
 	if request == nil {
 		return fmt.Errorf("[P2P %s] Refused by remote side", this.logPrefix)
 	}

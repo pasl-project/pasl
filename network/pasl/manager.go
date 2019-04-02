@@ -66,6 +66,7 @@ type manager struct {
 
 	timeoutRequest         time.Duration
 	peerUpdates            chan<- PeerInfo
+	txPoolUpdates          <-chan tx.CommonOperation
 	onStateUpdate          chan *PascalConnection
 	onNewBlock             chan *eventNewBlock
 	onNewOperation         chan *eventNewOperation
@@ -77,12 +78,13 @@ type manager struct {
 	doSync                 *sync.Cond
 }
 
-func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, timeoutRequest time.Duration, callback func(network.Manager) error) error {
+func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, txPoolUpdates <-chan tx.CommonOperation, timeoutRequest time.Duration, callback func(network.Manager) error) error {
 	manager := &manager{
 		timeoutRequest: timeoutRequest,
 		blockchain:     blockchain,
 		nonce:          nonce,
 		peerUpdates:    peerUpdates,
+		txPoolUpdates:  txPoolUpdates,
 		onStateUpdate:  make(chan *PascalConnection),
 		onNewOperation: make(chan *eventNewOperation),
 		onSyncState:    make(chan syncState),
@@ -118,13 +120,11 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 					}, event.source)
 				}
 			case event := <-manager.onNewOperation:
-				new, err := manager.blockchain.TxPoolAddOperation(event.CommonOperation)
+				new, err := manager.blockchain.TxPoolAddOperation(event.CommonOperation, false)
 				if err != nil {
 					utils.Tracef("[P2P %s] Tx validation failed: %v", event.source.logPrefix, err)
 				} else if new {
-					manager.forEachConnection(func(conn *PascalConnection) {
-						conn.BroadcastTx(event.CommonOperation)
-					}, event.source)
+					manager.broadcastTx(event.CommonOperation, event.source)
 				}
 			case conn := <-manager.closed:
 				manager.initializedConnections.Delete(conn)
@@ -145,6 +145,9 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 						utils.Tracef("Synchronizing with the network")
 					}
 				}
+			case transaction := <-manager.txPoolUpdates:
+				utils.Tracef("Broadcasting tx")
+				manager.broadcastTx(transaction, nil)
 			case <-ctx.Done():
 				return
 			}
@@ -255,6 +258,12 @@ func (this *manager) forEachConnection(fn func(*PascalConnection), except *Pasca
 		}
 		return true
 	})
+}
+
+func (m *manager) broadcastTx(transaction tx.CommonOperation, except *PascalConnection) {
+	m.forEachConnection(func(conn *PascalConnection) {
+		conn.BroadcastTx(transaction)
+	}, except)
 }
 
 func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error) {

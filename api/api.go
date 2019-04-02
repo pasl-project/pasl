@@ -131,7 +131,7 @@ func (this *Api) ExecuteOperations(_ context.Context, params *struct{ RawOperati
 
 	any := false
 	for _, tx := range operationsSet.Operations {
-		_, err := this.blockchain.TxPoolAddOperation(tx)
+		_, err := this.blockchain.TxPoolAddOperation(tx, true)
 		if err != nil {
 			utils.Tracef("error: %v", err)
 		} else if !any {

@@ -173,7 +173,7 @@ func run(cliContext *cli.Context) error {
 		nonce := utils.Serialize(key.Public)
 
 		peerUpdates := make(chan pasl.PeerInfo)
-		return pasl.WithManager(nonce, blockchain, peerUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
+		return pasl.WithManager(nonce, blockchain, peerUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
 			return network.WithNode(config, manager, func(node network.Node) error {
 
 				if cliContext.IsSet(exclusiveNodesFlag.GetName()) {

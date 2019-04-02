@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"container/list"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"reflect"
 )
@@ -72,7 +73,7 @@ type pair struct {
 	b int
 }
 
-func strucWalker(struc interface{}, callback func(*reflect.Value)) {
+func strucWalker(struc interface{}, callback func(*reflect.Value) error) error {
 	v := reflect.ValueOf(struc)
 	if reflect.TypeOf(struc).Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -84,12 +85,14 @@ func strucWalker(struc interface{}, callback func(*reflect.Value)) {
 		b: 0,
 	})
 
-	step := func(i int, v reflect.Value, el reflect.Value) bool {
+	step := func(i int, v reflect.Value, el reflect.Value) (bool, error) {
 		switch kind := el.Kind(); kind {
 		case reflect.Struct:
 			if el.CanAddr() {
 				if _, ok := el.Addr().Interface().(Serializable); ok {
-					callback(&el)
+					if err := callback(&el); err != nil {
+						return false, err
+					}
 					break
 				}
 			}
@@ -101,13 +104,17 @@ func strucWalker(struc interface{}, callback func(*reflect.Value)) {
 				a: el,
 				b: 0,
 			})
-			return false
+			return false, nil
 		case reflect.Slice:
 			switch el.Type().Elem().Kind() {
 			case reflect.Uint8:
-				callback(&el)
+				if err := callback(&el); err != nil {
+					return false, err
+				}
 			default:
-				callback(&el)
+				if err := callback(&el); err != nil {
+					return false, err
+				}
 				wayBack.PushBack(pair{
 					a: v,
 					b: i + 1,
@@ -116,12 +123,14 @@ func strucWalker(struc interface{}, callback func(*reflect.Value)) {
 					a: el,
 					b: 0,
 				})
-				return false
+				return false, nil
 			}
 		default:
-			callback(&el)
+			if err := callback(&el); err != nil {
+				return false, err
+			}
 		}
-		return true
+		return true, nil
 	}
 
 	for wayBack.Len() > 0 {
@@ -135,45 +144,60 @@ func strucWalker(struc interface{}, callback func(*reflect.Value)) {
 		case reflect.Struct:
 			if v.CanAddr() {
 				if _, ok := v.Addr().Interface().(Serializable); ok {
-					callback(&v)
+					if err := callback(&v); err != nil {
+						return err
+					}
 					break
 				}
 			}
 			total := v.NumField()
 			for i := current.(pair).b; i < total; i++ {
-				if !step(i, v, v.Field(i)) {
+				cont, err := step(i, v, v.Field(i))
+				if err != nil {
+					return err
+				}
+				if !cont {
 					break
 				}
 			}
 		case reflect.Slice:
 			total := v.Len()
 			for i := current.(pair).b; i < total; i++ {
-				if !step(i, v, v.Index(i)) {
+				cont, err := step(i, v, v.Index(i))
+				if err != nil {
+					return err
+				}
+				if !cont {
 					break
 				}
 			}
 		default:
-			callback(&v)
+			if err := callback(&v); err != nil {
+				return err
+			}
 		}
 	}
+
+	return nil
 }
 
 func Serialize(struc interface{}) []byte {
 	serialized := &bytes.Buffer{}
 
-	strucWalker(struc, func(value *reflect.Value) {
+	// TODO: add error return value
+	if strucWalker(struc, func(value *reflect.Value) error {
 		switch kind := value.Kind(); kind {
 		case reflect.Ptr:
 			if err := value.Interface().(Serializable).Serialize(serialized); err != nil {
-				Panicf("Custom type serialization failed: %v", err)
+				return fmt.Errorf("Custom type serialization failed: %v", err)
 			}
 		case reflect.Interface:
 			if err := value.Interface().(Serializable).Serialize(serialized); err != nil {
-				Panicf("Custom type serialization failed: %v", err)
+				return fmt.Errorf("Custom type serialization failed: %v", err)
 			}
 		case reflect.Struct:
 			if err := value.Addr().Interface().(Serializable).Serialize(serialized); err != nil {
-				Panicf("Custom type serialization failed: %v", err)
+				return fmt.Errorf("Custom type serialization failed: %v", err)
 			}
 		case reflect.Bool:
 			var val uint8
@@ -209,26 +233,29 @@ func Serialize(struc interface{}) []byte {
 			case reflect.Uint8:
 				binary.Write(serialized, binary.LittleEndian, value.Interface())
 			default:
-				Panicf("Unimplemented %v %v", kind, value.Type().Elem().Kind())
+				return fmt.Errorf("Unimplemented %v %v", kind, value.Type().Elem().Kind())
 			}
 		default:
-			Panicf("Unimplemented %v", kind)
+			return fmt.Errorf("Unimplemented %v", kind)
 		}
-	})
+		return nil
+	}) != nil {
+		return nil
+	}
 
 	return serialized.Bytes()
 }
 
 func Deserialize(struc interface{}, r io.Reader) error {
-	strucWalker(struc, func(value *reflect.Value) {
+	return strucWalker(struc, func(value *reflect.Value) error {
 		switch kind := value.Kind(); kind {
 		case reflect.Ptr:
 			if err := value.Interface().(Serializable).Deserialize(r); err != nil {
-				Panicf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
+				return fmt.Errorf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
 			}
 		case reflect.Struct:
 			if err := value.Addr().Interface().(Serializable).Deserialize(r); err != nil {
-				Panicf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
+				return fmt.Errorf("Custom type deserialization failed: %v %v", err, value.Addr().Interface())
 			}
 		case reflect.Bool:
 			var val uint8
@@ -258,15 +285,19 @@ func Deserialize(struc interface{}, r io.Reader) error {
 			var len uint16
 			binary.Read(r, binary.LittleEndian, &len)
 			var str []byte = make([]byte, len)
-			binary.Read(r, binary.LittleEndian, &str)
+			if _, err := io.ReadFull(r, str); err != nil {
+				return fmt.Errorf("insufficient data %v", err)
+			}
 			value.SetString(string(str))
 		case reflect.Slice:
 			switch kind := value.Type().Elem().Kind(); kind {
 			case reflect.Uint8:
 				var len uint16
 				binary.Read(r, binary.LittleEndian, &len)
-				var data []byte = make([]byte, len)
-				binary.Read(r, binary.LittleEndian, &data)
+				data := make([]byte, len)
+				if _, err := io.ReadFull(r, data); err != nil {
+					return fmt.Errorf("insufficient data %v", err)
+				}
 				value.SetBytes(data)
 			default:
 				var len uint32
@@ -278,11 +309,11 @@ func Deserialize(struc interface{}, r io.Reader) error {
 			case reflect.Uint8:
 				binary.Read(r, binary.LittleEndian, value.Addr().Interface())
 			default:
-				Panicf("Unimplemented array %v", kind)
+				return fmt.Errorf("Unimplemented array %v", kind)
 			}
 		default:
-			Panicf("Unimplemented %v", kind)
+			return fmt.Errorf("Unimplemented %v", kind)
 		}
+		return nil
 	})
-	return nil
 }

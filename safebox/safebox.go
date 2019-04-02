@@ -146,6 +146,10 @@ func (s *Safebox) GetUpdatedPacks() []uint32 {
 }
 
 func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
+	if err := this.validateSignatures(operations); err != nil {
+		return nil, err
+	}
+
 	blockIndex := this.accounter.GetHeight()
 	height := blockIndex + 1
 	reward := getReward(height)
@@ -160,10 +164,6 @@ func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uin
 			return this.accounter.GetAccount(number)
 		}
 		return nil
-	}
-
-	if err := this.validateSignatures(operations); err != nil {
-		return nil, err
 	}
 
 	affectedByTxes := make(map[*accounter.Account]map[uint32]uint32)

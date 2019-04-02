@@ -74,6 +74,10 @@ func (this *Transfer) GetPayload() []byte {
 }
 
 func (this *Transfer) validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error) {
+	if this.Destination == this.Source {
+		return nil, fmt.Errorf("Can't transfer funds to the same account")
+	}
+
 	destination := getAccount(this.Destination)
 	if destination == nil {
 		return nil, fmt.Errorf("Destination account %d not found", this.Destination)

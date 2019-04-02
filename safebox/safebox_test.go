@@ -192,3 +192,50 @@ func Test(t *testing.T) {
 		}
 	}
 }
+
+func TestValidation(t *testing.T) {
+	accounter := accounter.NewAccounter()
+	safebox := NewSafebox(accounter)
+
+	miner, err := crypto.NewKeyByType(crypto.NIDsecp256k1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for blocks := uint32(0); blocks < defaults.MaturationHeight; blocks++ {
+		_, err = safebox.ProcessOperations(miner.Public, 0, []tx.CommonOperation{}, big.NewInt(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	safebox.Merge()
+
+	height := safebox.GetHeight()
+	if height != defaults.MaturationHeight {
+		t.FailNow()
+	}
+
+	const source = uint32(0)
+	transaction := tx.Transfer{
+		Source:      source,
+		OperationId: 1,
+		Destination: source,
+		Amount:      3,
+		Fee:         4,
+		Payload:     nil,
+		PublicKey:   *miner.Public,
+	}
+	_, _, err = tx.Sign(&transaction, miner.Convert())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := safebox.ProcessOperations(nil, 0, []tx.CommonOperation{&transaction}, nil); err == nil {
+		t.Fatal(err)
+	}
+
+	if safebox.GetHeight() != height {
+		t.FailNow()
+	}
+}

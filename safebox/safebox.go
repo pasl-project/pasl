@@ -151,18 +151,20 @@ func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uin
 	}
 
 	blockIndex := this.accounter.GetHeight()
-	reward := getReward(blockIndex + 1)
-	for index := range operations {
-		reward += operations[index].GetFee()
-	}
-	this.accounter.NewPack(miner, reward, timestamp, difficulty)
-
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
 		if accountPack+defaults.MaturationHeight <= blockIndex {
 			return this.accounter.GetAccount(number)
 		}
 		return nil
+	}
+
+	if miner != nil {
+		reward := getReward(blockIndex + 1)
+		for index := range operations {
+			reward += operations[index].GetFee()
+		}
+		this.accounter.NewPack(miner, reward, timestamp, difficulty)
 	}
 
 	affectedByTxes := make(map[*accounter.Account]map[uint32]uint32)

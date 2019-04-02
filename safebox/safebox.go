@@ -151,8 +151,7 @@ func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uin
 	}
 
 	blockIndex := this.accounter.GetHeight()
-	height := blockIndex + 1
-	reward := getReward(height)
+	reward := getReward(blockIndex + 1)
 	for index := range operations {
 		reward += operations[index].GetFee()
 	}
@@ -160,7 +159,7 @@ func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uin
 
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)
-		if accountPack+defaults.MaturationHeight < height {
+		if accountPack+defaults.MaturationHeight <= blockIndex {
 			return this.accounter.GetAccount(number)
 		}
 		return nil

@@ -84,7 +84,7 @@ func getMain(ctx *cli.Context) error {
 
 func getHeight(ctx *cli.Context) error {
 	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain, _ storage.Storage) error {
-		height, _, _ := blockchain.GetState()
+		height := blockchain.GetHeight()
 		fmt.Fprintf(ctx.App.Writer, "%d\n", height)
 		return nil
 	})

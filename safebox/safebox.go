@@ -152,9 +152,7 @@ func (this *Safebox) processOperationsUnsafe(miner *crypto.Public, timestamp uin
 	for index := range operations {
 		reward += operations[index].GetFee()
 	}
-	newPack := this.accounter.NewPack(miner, reward, timestamp, difficulty)
-	updatedPacks := make(map[uint32]struct{})
-	updatedPacks[newPack] = struct{}{}
+	this.accounter.NewPack(miner, reward, timestamp, difficulty)
 
 	getMaturedAccountUnsafe := func(number uint32) *accounter.Account {
 		accountPack := number / uint32(defaults.AccountsPerBlock)

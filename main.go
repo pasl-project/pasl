@@ -110,6 +110,11 @@ var p2pPortFlag = cli.UintFlag{
 	Usage: "P2P bind port",
 	Value: uint(defaults.P2PPort),
 }
+var rpcIpFlag = cli.StringFlag{
+	Name:  "rpc-bind-ip",
+	Usage: "RPC bind ip",
+	Value: defaults.RPCBindHost,
+}
 var dataDirFlag = cli.StringFlag{
 	Name:  "data-dir",
 	Usage: "Directory to store blockchain files",
@@ -224,7 +229,7 @@ func run(cliContext *cli.Context) error {
 				}
 
 				coreRPC := api.NewApi(blockchain)
-				RPCBindAddress := fmt.Sprintf("%s:%d", defaults.RPCBindHost, defaults.RPCPort)
+				RPCBindAddress := fmt.Sprintf("%s:%d", cliContext.GlobalString(rpcIpFlag.GetName()), defaults.RPCPort)
 				RPCHandlers := coreRPC.GetHandlers()
 				return network.WithRpcServer(RPCBindAddress, RPCHandlers, func() error {
 					c := make(chan os.Signal, 1)
@@ -252,6 +257,7 @@ func main() {
 		exclusiveNodesFlag,
 		heightFlag,
 		p2pPortFlag,
+		rpcIpFlag,
 	}
 	app.CommandNotFound = func(c *cli.Context, command string) {
 		cli.ShowAppHelp(c)

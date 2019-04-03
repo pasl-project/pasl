@@ -46,6 +46,21 @@ type Operation struct {
 	Time           uint32  `json:"time"`
 }
 
+type BlockTemplate struct {
+	Difficulty         uint64 `json:"difficulty"`
+	Height             uint64 `json:"height"`
+	Reserved_offset    uint64 `json:"reserved_offset"`
+	Expected_reward    uint64 `json:"expected_reward"`
+	Prev_hash          string `json:"prev_hash"`
+	Blocktemplate_blob string `json:"blocktemplate_blob"`
+	Blockhashing_blob  string `json:"blockhashing_blob"`
+	Status             string `json:"status"`
+}
+
+type SubmitBlock struct {
+	Status string `json:"status"`
+}
+
 type API interface {
 	GetBlockCount(ctx context.Context) (int, error)
 	GetBlock(ctx context.Context, params *struct{ Block uint32 }) (*Block, error)
@@ -55,4 +70,9 @@ type API interface {
 	FindOperation(ctx context.Context, params *struct{ Ophash string }) (*Operation, error)
 	GetAccountOperations(ctx context.Context, params *struct{ Account uint32 }) ([]Operation, error)
 	GetBlockOperations(ctx context.Context, params *struct{ Block uint32 }) ([]Operation, error)
+	GetBlockTemplate(_ context.Context, params *struct {
+		Reserve_size   uint64
+		Wallet_address string
+	}) (*BlockTemplate, error)
+	SubmitBlock(_ context.Context, params []string) (*SubmitBlock, error)
 }

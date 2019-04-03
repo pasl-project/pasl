@@ -88,13 +88,17 @@ func TestPendingBlock(t *testing.T) {
 	}
 
 	height := blockchain.GetHeight()
-	if blockchain.GetBlock(height) != nil {
+	if _, err := blockchain.GetBlock(height); err == nil {
 		t.Fatal()
 	}
 
 	valid, _ := hex.DecodeString("030100010000000000060000000000000020a1070000000000000000000000000000000000000000240000000000002000dc9388917fb00065999f25bde135617677c7020a3aea916098b39ede89e37a222000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85520000000000000000000000000000000000000000000000000000000000000000000")
 	blockTimestamp := uint32(0)
-	got := utils.Serialize(blockchain.SerializeBlockHeader(blockchain.getPendingBlock(nil, nil, &blockTimestamp, 0), false, true))
+	block, err := blockchain.getPendingBlock(nil, nil, &blockTimestamp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := utils.Serialize(blockchain.SerializeBlockHeader(block, false, true))
 	if !bytes.Equal(valid, got) {
 		t.Fatalf("\n%s !=\n%s", hex.EncodeToString(valid), hex.EncodeToString(got))
 	}
@@ -110,7 +114,7 @@ func TestDeserializeAndPow(t *testing.T) {
 	if height != 0 {
 		t.Fatal()
 	}
-	if blockchain.GetBlock(height) != nil {
+	if _, err := blockchain.GetBlock(height); err == nil {
 		t.Fatal()
 	}
 
@@ -121,7 +125,7 @@ func TestDeserializeAndPow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := blockchain.ProcessNewBlock(blockSerialized); err != nil {
+	if err := blockchain.ProcessNewBlock(blockSerialized, false); err != nil {
 		t.Fatal(err)
 	} else {
 		height = blockchain.GetHeight()
@@ -129,11 +133,13 @@ func TestDeserializeAndPow(t *testing.T) {
 			t.Fatal()
 		}
 
-		block := blockchain.GetBlock(blockSerialized.Header.Index)
+		block, err := blockchain.GetBlock(blockSerialized.Header.Index)
+		if err != nil {
+			t.Fatal(err)
+		}
 		pow := blockchain.GetBlockPow(block)
 		if !bytes.Equal(pow, powFromRaw) {
 			t.Fatalf("\n%s !=\n%s", hex.EncodeToString(powFromRaw), hex.EncodeToString(pow))
 		}
 	}
-
 }

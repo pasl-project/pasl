@@ -66,9 +66,9 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 		return nil
 	}
 
-	topBlock := this.blockchain.GetTopBlock()
-	if topBlock == nil {
-		return fmt.Errorf("failed to get top block")
+	topBlock, err := this.blockchain.GetTopBlock()
+	if err != nil {
+		return err
 	}
 
 	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
@@ -177,9 +177,9 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 		return nil, err
 	}
 
-	topBlock := this.blockchain.GetTopBlock()
-	if topBlock == nil {
-		return nil, fmt.Errorf("failed to get top block")
+	topBlock, err := this.blockchain.GetTopBlock()
+	if err != nil {
+		return nil, err
 	}
 
 	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
@@ -207,10 +207,10 @@ func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, paylo
 
 	serialized := make([]safebox.SerializedBlock, total)
 	for index := packet.FromIndex; index <= packet.ToIndex; index++ {
-		if block := this.blockchain.GetBlock(index); block != nil {
+		if block, err := this.blockchain.GetBlock(index); err == nil {
 			serialized = append(serialized, this.blockchain.SerializeBlock(block))
 		} else {
-			utils.Tracef("[P2P %s] Failed to get block %d", this.logPrefix, index)
+			utils.Tracef("[P2P %s] Failed to get block %d: %v", this.logPrefix, index, err)
 			break
 		}
 	}

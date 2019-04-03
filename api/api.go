@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/crypto"
@@ -37,6 +38,8 @@ func (a *Api) GetHandlers() map[string]interface{} {
 		"getaccountoperations": a.GetAccountOperations,
 		"getblockoperations":   a.GetBlockOperations,
 		"getpubkeyaccounts":    a.GetPubKeyAccounts,
+		"getblocktemplate":     a.GetBlockTemplate,
+		"submitblock":          a.SubmitBlock,
 	}
 }
 
@@ -46,9 +49,9 @@ func (this *Api) GetBlockCount(context.Context) (int, error) {
 }
 
 func (this *Api) GetBlock(_ context.Context, params *struct{ Block uint32 }) (*network.Block, error) {
-	blockMeta := this.blockchain.GetBlock(params.Block)
-	if blockMeta == nil {
-		return nil, errors.New("Not found")
+	blockMeta, err := this.blockchain.GetBlock(params.Block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block: %v", err)
 	}
 	operations := blockMeta.GetOperations()
 	fee := uint64(0)
@@ -203,4 +206,58 @@ func (this *Api) GetPubKeyAccounts(_ context.Context, params *struct{ B58_pubkey
 		return nil, err
 	}
 	return this.blockchain.GetAccountsByPublicKey(public), nil
+}
+
+func (a *Api) GetBlockTemplate(_ context.Context, params *struct {
+	Reserve_size   uint64
+	Wallet_address string
+}) (*network.BlockTemplate, error) {
+	miner, err := crypto.PublicFromBase58(params.Wallet_address)
+	if err != nil {
+		return nil, err
+	}
+
+	block, template, reservedOffset, err := a.blockchain.GetBlockTemplate(miner, make([]byte, params.Reserve_size), nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	templateHex := hex.EncodeToString(template)
+	return &network.BlockTemplate{
+		Difficulty:         block.GetTarget().GetDifficulty().Uint64(),
+		Height:             uint64(block.GetIndex()),
+		Expected_reward:    block.GetReward(),
+		Reserved_offset:    uint64(reservedOffset),
+		Prev_hash:          hex.EncodeToString(block.GetPrevSafeBoxHash()),
+		Blocktemplate_blob: templateHex,
+		Blockhashing_blob:  templateHex,
+		Status:             "OK",
+	}, nil
+}
+
+func (a *Api) SubmitBlock(_ context.Context, params []string) (*network.SubmitBlock, error) {
+	if len(params) != 1 {
+		return nil, fmt.Errorf("expecting single argument")
+	}
+
+	template, err := hex.DecodeString(params[0])
+	if err != nil {
+		return nil, err
+	}
+
+	miner, nonce, timestamp, payload, err := a.blockchain.UnmarshalHashingBlob(template)
+	if err != nil {
+		return nil, err
+	}
+
+	block, _, _, err := a.blockchain.GetBlockTemplate(miner, payload, &timestamp, nonce)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.blockchain.ProcessNewBlock(a.blockchain.SerializeBlock(block), true); err != nil {
+		return nil, err
+	}
+
+	return &network.SubmitBlock{
+		Status: "OK",
+	}, nil
 }

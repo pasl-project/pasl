@@ -54,6 +54,7 @@ type Blockchain struct {
 	lock                sync.RWMutex
 	target              common.TargetBase
 	blocksSinceSnapshot uint32
+	BlocksUpdates       chan safebox.SerializedBlock
 	TxPoolUpdates       chan tx.CommonOperation
 }
 
@@ -124,6 +125,7 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 		storage:             s,
 		target:              common.NewTarget(nextTarget),
 		txPool:              iterator.New(),
+		BlocksUpdates:       make(chan safebox.SerializedBlock),
 		TxPoolUpdates:       make(chan tx.CommonOperation),
 	}
 
@@ -343,8 +345,12 @@ func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSa
 	return nil
 }
 
-func (this *Blockchain) ProcessNewBlock(block safebox.SerializedBlock) error {
-	return this.ProcessNewBlocks([]safebox.SerializedBlock{block}, nil)
+func (b *Blockchain) ProcessNewBlock(block safebox.SerializedBlock, broadcast bool) error {
+	err := b.ProcessNewBlocks([]safebox.SerializedBlock{block}, nil)
+	if err == nil && broadcast {
+		b.BlocksUpdates <- block
+	}
+	return err
 }
 
 func (this *Blockchain) LoadSnapshot(height uint32) (*accounter.Accounter, error) {
@@ -387,7 +393,10 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 
 	{
 		header := blocks[0].Header
-		mainBlock := this.GetBlock(header.Index)
+		mainBlock, err := this.GetBlock(header.Index)
+		if err != nil {
+			return err
+		}
 		if !bytes.Equal(mainBlock.GetPrevSafeBoxHash(), header.PrevSafeboxHash) {
 			return fmt.Errorf("alternate chain parent not found")
 		}
@@ -399,12 +408,18 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	}
 
 	snapshotHeight := snapshot.GetHeight()
-	mainBlock := this.GetBlock(snapshotHeight - 1)
+	mainBlock, err := this.GetBlock(snapshotHeight - 1)
+	if err != nil {
+		return err
+	}
 
 	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
 	currentTarget := newBlockchain.target
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
-		block := this.GetBlock(index)
+		block, err := this.GetBlock(index)
+		if err != nil {
+			return err
+		}
 		newTarget, _, err := this.addBlock(currentTarget, block)
 		if err != nil {
 			return err
@@ -489,10 +504,16 @@ func (b *Blockchain) txPoolApplyAndInvalidateUnsafe() {
 	}
 }
 
-func (b *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte, time *uint32, nonce uint32) (block safebox.BlockBase, template []byte, reservedOffset int) {
-	block = b.getPendingBlock(miner, payload, time, nonce)
+func (b *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte, time *uint32, nonce uint32) (block safebox.BlockBase, template []byte, reservedOffset int, err error) {
+	if block, err = b.getPendingBlock(miner, payload, time, nonce); err != nil {
+		return nil, nil, 0, err
+	}
 	template, reservedOffset = safebox.GetBlockHashingBlob(block)
-	return block, template, reservedOffset
+	return block, template, reservedOffset, nil
+}
+
+func (b *Blockchain) UnmarshalHashingBlob(blob []byte) (miner *crypto.Public, nonce uint32, timestamp uint32, payload []byte, err error) {
+	return safebox.UnmarshalHashingBlob(blob)
 }
 
 func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {
@@ -540,7 +561,7 @@ func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.Serializ
 	}
 }
 
-func (b *Blockchain) GetTopBlock() safebox.BlockBase {
+func (b *Blockchain) GetTopBlock() (safebox.BlockBase, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -567,7 +588,7 @@ func (b *Blockchain) GetTxPool() map[tx.CommonOperation]tx.TxMetadata {
 	return result
 }
 
-func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp *uint32, nonce uint32) safebox.BlockBase {
+func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp *uint32, nonce uint32) (safebox.BlockBase, error) {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 
@@ -612,28 +633,23 @@ func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, times
 		Operations:      tx.ToTxSerialized(txes),
 	})
 	if err != nil {
-		utils.Tracef("Error %s", err.Error())
+		return nil, err
 	}
-	return block
+	return block, nil
 }
 
-func (this *Blockchain) GetBlock(index uint32) safebox.BlockBase {
+func (this *Blockchain) GetBlock(index uint32) (safebox.BlockBase, error) {
 	var serialized []byte
 	serialized, err := this.storage.GetBlock(index)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var meta safebox.BlockMetadata
 	if err = utils.Deserialize(&meta, bytes.NewBuffer(serialized)); err != nil {
-		return nil
+		return nil, err
 	}
 
-	block, err := safebox.NewBlock(&meta)
-	if err != nil {
-		return nil
-	}
-
-	return block
+	return safebox.NewBlock(&meta)
 }
 
 func (this *Blockchain) GetHeight() uint32 {
@@ -681,9 +697,9 @@ func (this *Blockchain) AccountOperationsForEach(number uint32, offset uint32, l
 }
 
 func (this *Blockchain) BlockOperationsForEach(index uint32, fn func(meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
-	block := this.GetBlock(index)
-	if block == nil {
-		return fmt.Errorf("Failed to get block %d", index)
+	block, err := this.GetBlock(index)
+	if err != nil {
+		return fmt.Errorf("Failed to get block %d: %v", index, err)
 	}
 
 	operations := block.GetOperations()

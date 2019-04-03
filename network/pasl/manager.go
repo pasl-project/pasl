@@ -65,6 +65,7 @@ type manager struct {
 	nonce      []byte
 
 	timeoutRequest         time.Duration
+	blocksUpdates          <-chan safebox.SerializedBlock
 	peerUpdates            chan<- PeerInfo
 	txPoolUpdates          <-chan tx.CommonOperation
 	onStateUpdate          chan *PascalConnection
@@ -78,11 +79,12 @@ type manager struct {
 	doSync                 *sync.Cond
 }
 
-func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, txPoolUpdates <-chan tx.CommonOperation, timeoutRequest time.Duration, callback func(network.Manager) error) error {
+func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, blocksUpdates <-chan safebox.SerializedBlock, txPoolUpdates <-chan tx.CommonOperation, timeoutRequest time.Duration, callback func(network.Manager) error) error {
 	manager := &manager{
 		timeoutRequest: timeoutRequest,
 		blockchain:     blockchain,
 		nonce:          nonce,
+		blocksUpdates:  blocksUpdates,
 		peerUpdates:    peerUpdates,
 		txPoolUpdates:  txPoolUpdates,
 		onStateUpdate:  make(chan *PascalConnection),
@@ -112,12 +114,10 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 		for {
 			select {
 			case event := <-manager.onNewBlock:
-				if err := manager.blockchain.ProcessNewBlock(event.SerializedBlock); err != nil {
+				if err := manager.blockchain.ProcessNewBlock(event.SerializedBlock, false); err != nil {
 					utils.Tracef("[P2P %s] AddBlockSerialized %d failed %v", event.source.logPrefix, event.SerializedBlock.Header.Index, err)
 				} else if event.shouldBroadcast {
-					manager.forEachConnection(func(conn *PascalConnection) {
-						conn.BroadcastBlock(&event.SerializedBlock)
-					}, event.source)
+					manager.broadcastBlock(&event.SerializedBlock, event.source)
 				}
 			case event := <-manager.onNewOperation:
 				new, err := manager.blockchain.TxPoolAddOperation(event.CommonOperation, false)
@@ -145,6 +145,9 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 						utils.Tracef("Synchronizing with the network")
 					}
 				}
+			case block := <-manager.blocksUpdates:
+				utils.Tracef("Broadcasting tx")
+				manager.broadcastBlock(&block, nil)
 			case transaction := <-manager.txPoolUpdates:
 				utils.Tracef("Broadcasting tx")
 				manager.broadcastTx(transaction, nil)
@@ -258,6 +261,12 @@ func (this *manager) forEachConnection(fn func(*PascalConnection), except *Pasca
 		}
 		return true
 	})
+}
+
+func (m *manager) broadcastBlock(block *safebox.SerializedBlock, except *PascalConnection) {
+	m.forEachConnection(func(conn *PascalConnection) {
+		conn.BroadcastBlock(block)
+	}, except)
 }
 
 func (m *manager) broadcastTx(transaction tx.CommonOperation, except *PascalConnection) {

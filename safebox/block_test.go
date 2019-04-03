@@ -55,3 +55,19 @@ func TestMetaSerialize(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func newBlock(payloadLength int) error {
+	_, err := NewBlock(&BlockMetadata{
+		Payload: make([]byte, payloadLength),
+	})
+	return err
+}
+
+func TestInvalidBlock(t *testing.T) {
+	if err := newBlock(255); err != nil {
+		t.FailNow()
+	}
+	if err := newBlock(256); err == nil {
+		t.FailNow()
+	}
+}

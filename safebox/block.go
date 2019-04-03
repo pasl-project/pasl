@@ -21,10 +21,12 @@ package safebox
 
 import (
 	"crypto/sha256"
+	"fmt"
 
 	"github.com/pasl-project/pasl/accounter"
 	"github.com/pasl-project/pasl/common"
 	"github.com/pasl-project/pasl/crypto"
+	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/safebox/tx"
 	"github.com/pasl-project/pasl/utils"
 )
@@ -111,6 +113,10 @@ func GetOperationsHash(operations []tx.CommonOperation) [32]byte {
 }
 
 func NewBlock(meta *BlockMetadata) (BlockBase, error) {
+	if len(meta.Payload) > defaults.MaxPayloadLength {
+		return nil, fmt.Errorf("payload length %d exceeds max allowed %d bytes", len(meta.Payload), defaults.MaxPayloadLength)
+	}
+
 	fee := uint64(0)
 	operations := make([]tx.CommonOperation, len(meta.Operations))
 

@@ -43,6 +43,7 @@ const (
 	MaxIncoming             uint32        = 100
 	MaxOutgoing             uint32        = 10
 	MaxBlockTimeOffset      uint32        = 15
+	MaxPayloadLength        int           = 255
 	NetworkBlocksPerRequest uint32        = 500
 	ReconnectionDelayMax    uint32        = 30
 )

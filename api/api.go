@@ -109,10 +109,11 @@ func txToNetwork(meta *tx.TxMetadata, transaction tx.CommonOperation) network.Op
 
 func (this *Api) GetPending(_ context.Context) ([]network.Operation, error) {
 	response := make([]network.Operation, 0)
-	this.blockchain.TxPoolForEach(func(meta *tx.TxMetadata, tx tx.CommonOperation) bool {
-		response = append(response, txToNetwork(meta, tx))
-		return true
-	})
+
+	for tx, meta := range this.blockchain.GetTxPool() {
+		response = append(response, txToNetwork(&meta, tx))
+	}
+
 	return response, nil
 }
 

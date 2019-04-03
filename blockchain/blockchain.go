@@ -37,6 +37,8 @@ import (
 	"github.com/pasl-project/pasl/safebox/tx"
 	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
+
+	"github.com/mantyr/iterator"
 )
 
 var (
@@ -46,7 +48,7 @@ var (
 )
 
 type Blockchain struct {
-	txPool              sync.Map
+	txPool              *iterator.Items
 	storage             storage.Storage
 	safebox             *safebox.Safebox
 	lock                sync.RWMutex
@@ -117,10 +119,11 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 	nextTarget := safeboxInstance.GetFork().GetNextTarget(target, safeboxInstance.GetLastTimestamps)
 
 	blockchain := &Blockchain{
-		storage:             s,
-		safebox:             safeboxInstance,
-		target:              common.NewTarget(nextTarget),
 		blocksSinceSnapshot: 0,
+		safebox:             safeboxInstance,
+		storage:             s,
+		target:              common.NewTarget(nextTarget),
+		txPool:              iterator.New(),
 		TxPoolUpdates:       make(chan tx.CommonOperation),
 	}
 
@@ -428,7 +431,6 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	}
 
 	// TODO: drop orphaned blocks and txes from storage
-	// TODO: invalidate mem pool txes
 
 	this.safebox = newBlockchain.safebox
 	this.target = newBlockchain.target
@@ -462,7 +464,7 @@ func (b *Blockchain) TxPoolAddOperation(transaction tx.CommonOperation, broadcas
 }
 
 func (b *Blockchain) txPoolAddOperationUnsafe(transaction tx.CommonOperation, broadcast bool) (new bool, err error) {
-	_, exists := b.txPool.Load(tx.GetTxIdString(transaction))
+	_, exists := b.txPool.Get(tx.GetTxIdString(transaction))
 	if exists {
 		return false, nil
 	}
@@ -470,33 +472,20 @@ func (b *Blockchain) txPoolAddOperationUnsafe(transaction tx.CommonOperation, br
 	if _, err := b.safebox.ProcessOperations(nil, 0, []tx.CommonOperation{transaction}, nil); err != nil {
 		return false, err
 	}
-	_, exists = b.txPool.LoadOrStore(tx.GetTxIdString(transaction), transaction)
-	if broadcast && !exists {
+
+	b.txPool.Add(tx.GetTxIdString(transaction), transaction)
+	if broadcast {
 		b.TxPoolUpdates <- transaction
 	}
 	return !exists, nil
 }
 
 func (b *Blockchain) txPoolApplyAndInvalidateUnsafe() {
-	oldTxPool := &b.txPool
-	b.txPool = sync.Map{}
-	oldTxPool.Range(func(_, value interface{}) bool {
-		transaction := value.(tx.CommonOperation)
+	oldTxPool := b.txPool
+	b.txPool = iterator.New()
+	for item := range oldTxPool.Iter() {
+		transaction := item.Value.(tx.CommonOperation)
 		b.txPoolAddOperationUnsafe(transaction, true)
-		return true
-	})
-}
-
-func (this *Blockchain) txPoolCleanUpUnsafe(toRemove []tx.CommonOperation) {
-	this.txPool.Range(func(txId, value interface{}) bool {
-		transaction := value.(tx.CommonOperation)
-		if err := this.safebox.Validate(transaction); err != nil {
-			toRemove = append(toRemove, transaction)
-		}
-		return true
-	})
-	for index, _ := range toRemove {
-		this.txPool.Delete(tx.GetTxIdString(toRemove[index]))
 	}
 }
 
@@ -569,18 +558,27 @@ func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
 	return this.getPendingBlock(nil, []byte(""), blockTimestamp)
 }
 
-func (this *Blockchain) TxPoolForEach(fn func(meta *tx.TxMetadata, tx tx.CommonOperation) bool) {
+func (b *Blockchain) GetTxPool() map[tx.CommonOperation]tx.TxMetadata {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
+	result := make(map[tx.CommonOperation]tx.TxMetadata)
+
 	i := uint32(0)
 	time := uint32(time.Now().Unix())
-	this.txPool.Range(func(key, value interface{}) bool {
-		transaction := value.(tx.CommonOperation)
-		meta := tx.GetMetadata(transaction, i, 0, time)
-		i += 1
-		return fn(&meta, transaction)
-	})
+	for item := range b.txPool.Iter() {
+		transaction := item.Value.(tx.CommonOperation)
+		result[transaction] = tx.GetMetadata(transaction, i, 0, time)
+		i++
+	}
+
+	return result
 }
 
-func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
+func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
 	var minerSerialized []byte
 	if miner == nil {
 		minerSerialized = utils.Serialize(crypto.NewKey(nil, 0, nil, big.NewInt(0), big.NewInt(0)).Public)
@@ -588,13 +586,14 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, ti
 		minerSerialized = utils.Serialize(miner)
 	}
 
-	height, safeboxHash, _ := this.safebox.GetState()
+	height, safeboxHash, _ := b.safebox.GetState()
 
 	txes := make([]tx.CommonOperation, 0)
-	this.txPool.Range(func(key, value interface{}) bool {
-		txes = append(txes, value.(tx.CommonOperation))
-		return true
-	})
+	for item := range b.txPool.Iter() {
+		transaction := item.Value.(tx.CommonOperation)
+		txes = append(txes, transaction)
+	}
+
 	block, err := safebox.NewBlock(&safebox.BlockMetadata{
 		Index: height,
 		Miner: minerSerialized,
@@ -603,7 +602,7 @@ func (this *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, ti
 			Minor: 1,
 		},
 		Timestamp:       timestamp,
-		Target:          this.target.GetCompact(),
+		Target:          b.target.GetCompact(),
 		Nonce:           0,
 		Payload:         payload,
 		PrevSafeBoxHash: safeboxHash,

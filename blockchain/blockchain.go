@@ -489,8 +489,10 @@ func (b *Blockchain) txPoolApplyAndInvalidateUnsafe() {
 	}
 }
 
-func (this *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte, time uint32) (template []byte, reservedOffset int, reservedSize int) {
-	return this.safebox.GetFork().GetBlockHashingBlob(this.getPendingBlock(miner, payload, time))
+func (b *Blockchain) GetBlockTemplate(miner *crypto.Public, payload []byte, time *uint32, nonce uint32) (block safebox.BlockBase, template []byte, reservedOffset int) {
+	block = b.getPendingBlock(miner, payload, time, nonce)
+	template, reservedOffset = safebox.GetBlockHashingBlob(block)
+	return block, template, reservedOffset
 }
 
 func (this *Blockchain) GetBlockPow(block safebox.BlockBase) []byte {
@@ -545,17 +547,7 @@ func (b *Blockchain) GetTopBlock() safebox.BlockBase {
 	if height := b.GetHeight(); height > 0 {
 		return b.GetBlock(height - 1)
 	}
-	return b.GetPendingBlock(nil)
-}
-
-func (this *Blockchain) GetPendingBlock(timestamp *uint32) safebox.BlockBase {
-	var blockTimestamp uint32
-	if timestamp == nil {
-		blockTimestamp = uint32(time.Now().Unix())
-	} else {
-		blockTimestamp = *timestamp
-	}
-	return this.getPendingBlock(nil, []byte(""), blockTimestamp)
+	return b.getPendingBlock(nil, nil, nil, 0)
 }
 
 func (b *Blockchain) GetTxPool() map[tx.CommonOperation]tx.TxMetadata {
@@ -575,9 +567,20 @@ func (b *Blockchain) GetTxPool() map[tx.CommonOperation]tx.TxMetadata {
 	return result
 }
 
-func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp uint32) safebox.BlockBase {
+func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, timestamp *uint32, nonce uint32) safebox.BlockBase {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
+
+	var blockTimestamp uint32
+	if timestamp == nil {
+		blockTimestamp = uint32(time.Now().Unix())
+	} else {
+		blockTimestamp = *timestamp
+	}
+
+	if payload == nil {
+		payload = []byte("")
+	}
 
 	var minerSerialized []byte
 	if miner == nil {
@@ -601,9 +604,9 @@ func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, times
 			Major: 1,
 			Minor: 1,
 		},
-		Timestamp:       timestamp,
+		Timestamp:       blockTimestamp,
 		Target:          b.target.GetCompact(),
-		Nonce:           0,
+		Nonce:           nonce,
 		Payload:         payload,
 		PrevSafeBoxHash: safeboxHash,
 		Operations:      tx.ToTxSerialized(txes),

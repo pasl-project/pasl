@@ -79,11 +79,6 @@ func MaxUint64(a uint64, b uint64) uint64 {
 	return b
 }
 
-func TimeTrack(start time.Time, format string) {
-	elapsed := time.Since(start)
-	Tracef(format, elapsed)
-}
-
 func getHomeDir() (string, error) {
 	if home := os.Getenv("HOME"); home != "" {
 		return home, nil

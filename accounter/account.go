@@ -79,6 +79,10 @@ func (this *Account) GetOperationsTotal() uint32 {
 	return this.operationsTotal
 }
 
+func (a *Account) GetPublicKey() *crypto.Public {
+	return &a.publicKey
+}
+
 func (this *Account) GetPublicKeySerialized() crypto.PublicSerialized {
 	return this.publicKey.Serialized()
 }

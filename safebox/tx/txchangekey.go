@@ -88,6 +88,9 @@ func (this *ChangeKey) validate(getAccount func(number uint32) *accounter.Accoun
 	if err != nil {
 		return nil, err
 	}
+	if public.Equal(source.GetPublicKey()) {
+		return nil, fmt.Errorf("New public key is equal to the current one")
+	}
 
 	return &changeKeyContext{public}, nil
 }

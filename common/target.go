@@ -42,15 +42,15 @@ type TargetBase interface {
 	GetDifficulty() *big.Int
 	Check(pow []byte) bool
 	Equal(other TargetBase) bool
-	Set(uint32)
 
 	utils.Serializable
 }
 
 func NewTarget(compact uint32) TargetBase {
+	value := fromCompact(compact)
 	return &target{
-		compact: compact,
-		value:   fromCompact(compact),
+		compact: ToCompact(value),
+		value:   value,
 	}
 }
 
@@ -76,20 +76,18 @@ func (this *target) Equal(other TargetBase) bool {
 	return this.compact == other.GetCompact()
 }
 
-func (this *target) Set(compact uint32) {
-	if this.compact == compact {
-		return
-	}
-	this.compact = compact
-	this.value = fromCompact(this.compact)
-}
-
 func (this *target) Serialize(w io.Writer) error {
 	return binary.Write(w, binary.LittleEndian, this.compact)
 }
 
 func (this *target) Deserialize(r io.Reader) error {
-	return binary.Read(r, binary.LittleEndian, &this.compact)
+	compact := uint32(0)
+	err := binary.Read(r, binary.LittleEndian, &compact)
+	if err == nil {
+		this.value = fromCompact(compact)
+		this.compact = ToCompact(this.value)
+	}
+	return err
 }
 
 func fromCompact(compact uint32) *big.Int {
@@ -103,6 +101,10 @@ func fromCompact(compact uint32) *big.Int {
 
 	result := big.NewInt(int64(value))
 	return result.Lsh(result, 256-zeroBits-25)
+}
+
+func fromDifficulty(difficulty uint64) uint32 {
+	return ToCompact(big.NewInt(0).Div(difficultyOne, big.NewInt(0).SetUint64(difficulty)))
 }
 
 func ToCompact(value *big.Int) uint32 {

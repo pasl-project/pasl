@@ -160,6 +160,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 func run(cliContext *cli.Context) error {
 	utils.Ftracef(cliContext.App.Writer, defaults.UserAgent)
 
+	utils.Ftracef(cliContext.App.Writer, "Loading blockchain")
 	return withBlockchain(cliContext, func(blockchain *blockchain.Blockchain, s storage.Storage) error {
 		height, safeboxHash, cumulativeDifficulty := blockchain.GetState()
 		utils.Ftracef(cliContext.App.Writer, "Blockchain loaded, height %d safeboxHash %s cumulativeDifficulty %s", height, hex.EncodeToString(safeboxHash), cumulativeDifficulty.String())

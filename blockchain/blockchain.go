@@ -47,15 +47,19 @@ var (
 	ErrParentNotFound  = errors.New("Parent block not found")
 )
 
+type NewSafeboxCallback func(accounter *accounter.Accounter) safebox.SafeboxBase
+
 type Blockchain struct {
 	txPool              *iterator.Items
 	storage             storage.Storage
-	safebox             *safebox.Safebox
+	safebox             safebox.SafeboxBase
 	lock                sync.RWMutex
 	target              common.TargetBase
 	blocksSinceSnapshot uint32
 	BlocksUpdates       chan safebox.SerializedBlock
 	TxPoolUpdates       chan tx.CommonOperation
+	newSafeboxCallback  NewSafeboxCallback
+	prevSafeboxHash     []byte
 }
 
 type blockInfo struct {
@@ -63,7 +67,7 @@ type blockInfo struct {
 	affectedByTx map[*accounter.Account]map[uint32]uint32
 }
 
-func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
+func NewBlockchain(fn NewSafeboxCallback, s storage.Storage, height *uint32) (*Blockchain, error) {
 	accounter := accounter.NewAccounter()
 	var topBlock *safebox.BlockMetadata
 	var err error
@@ -86,7 +90,7 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 		return common.NewTarget(defaults.MinTarget)
 	}
 
-	blockchain := newBlockchain(s, accounter, getPrevTarget())
+	blockchain := newBlockchain(fn, s, accounter, getPrevTarget())
 
 	if !restore && height == nil {
 		return blockchain, nil
@@ -115,9 +119,11 @@ func NewBlockchain(s storage.Storage, height *uint32) (*Blockchain, error) {
 	return blockchain, nil
 }
 
-func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target common.TargetBase) *Blockchain {
-	safeboxInstance := safebox.NewSafebox(accounter)
+func newBlockchain(fn NewSafeboxCallback, s storage.Storage, accounter *accounter.Accounter, target common.TargetBase) *Blockchain {
+	safeboxInstance := fn(accounter)
 	nextTarget := safeboxInstance.GetFork().GetNextTarget(target, safeboxInstance.GetLastTimestamps)
+
+	_, safeboxHash, _ := safeboxInstance.GetState()
 
 	blockchain := &Blockchain{
 		blocksSinceSnapshot: 0,
@@ -127,7 +133,10 @@ func newBlockchain(s storage.Storage, accounter *accounter.Accounter, target com
 		txPool:              iterator.New(),
 		BlocksUpdates:       make(chan safebox.SerializedBlock),
 		TxPoolUpdates:       make(chan tx.CommonOperation),
+		newSafeboxCallback:  fn,
+		prevSafeboxHash:     make([]byte, len(safeboxHash)),
 	}
+	copy(blockchain.prevSafeboxHash, safeboxHash)
 
 	return blockchain
 }
@@ -207,7 +216,7 @@ func (b *Blockchain) addBlock(target common.TargetBase, block safebox.BlockBase)
 	return newTarget, affectedByTx, nil
 }
 
-func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(*safebox.Safebox, common.TargetBase) error) error {
+func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase, common.TargetBase) error) error {
 	currentTarget := this.target
 	affectedByBlocks := make(map[safebox.BlockBase]blockInfo)
 	blocksProcessed := make([]safebox.BlockBase, 0, len(blocks))
@@ -329,18 +338,20 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	return nil
 }
 
-func (this *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(*safebox.Safebox, common.TargetBase) error) error {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+func (b *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase, common.TargetBase) error) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
 
-	this.safebox.Rollback()
-	defer this.txPoolApplyAndInvalidateUnsafe()
+	b.safebox.Rollback()
+	defer b.txPoolApplyAndInvalidateUnsafe()
 
-	if err := this.processNewBlocksUnsafe(blocks, preSave); err != nil {
+	if err := b.processNewBlocksUnsafe(blocks, preSave); err != nil {
 		return err
 	}
 
-	this.safebox.Merge()
+	b.safebox.Merge()
+	_, safeboxHash, _ := b.safebox.GetState()
+	copy(b.prevSafeboxHash, safeboxHash)
 
 	return nil
 }
@@ -413,7 +424,7 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 		return err
 	}
 
-	newBlockchain := newBlockchain(this.storage, snapshot, mainBlock.GetTarget())
+	newBlockchain := newBlockchain(this.newSafeboxCallback, this.storage, snapshot, mainBlock.GetTarget())
 	currentTarget := newBlockchain.target
 	for index := snapshotHeight; index < blocks[0].Header.Index; index++ {
 		block, err := this.GetBlock(index)
@@ -431,7 +442,7 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	cumulativeDifficultyCheck := func(altSafebox *safebox.Safebox, target common.TargetBase) error {
+	cumulativeDifficultyCheck := func(altSafebox safebox.SafeboxBase, target common.TargetBase) error {
 		_, _, cumulativeDifficulty := altSafebox.GetState()
 		_, _, currentCumulativeDifficulty := this.GetState()
 		if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {
@@ -610,16 +621,14 @@ func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, times
 		minerSerialized = utils.Serialize(miner)
 	}
 
-	height, safeboxHash, _ := b.safebox.GetState()
-
 	txes := make([]tx.CommonOperation, 0)
 	for item := range b.txPool.Iter() {
 		transaction := item.Value.(tx.CommonOperation)
 		txes = append(txes, transaction)
 	}
 
-	block, err := safebox.NewBlock(&safebox.BlockMetadata{
-		Index: height,
+	meta := safebox.BlockMetadata{
+		Index: b.safebox.GetHeight(),
 		Miner: minerSerialized,
 		Version: common.Version{
 			Major: 1,
@@ -629,9 +638,11 @@ func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, times
 		Target:          b.target.GetCompact(),
 		Nonce:           nonce,
 		Payload:         payload,
-		PrevSafeBoxHash: safeboxHash,
+		PrevSafeBoxHash: make([]byte, len(b.prevSafeboxHash)),
 		Operations:      tx.ToTxSerialized(txes),
-	})
+	}
+	copy(meta.PrevSafeBoxHash[:], b.prevSafeboxHash[:])
+	block, err := safebox.NewBlock(&meta)
 	if err != nil {
 		return nil, err
 	}

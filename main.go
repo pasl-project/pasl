@@ -38,6 +38,7 @@ import (
 	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/network"
 	"github.com/pasl-project/pasl/network/pasl"
+	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
 )
@@ -142,9 +143,9 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 		if ctx.IsSet(heightFlag.GetName()) {
 			var height uint32
 			height = uint32(heightFlagValue)
-			blockchainInstance, err = blockchain.NewBlockchain(storage, &height)
+			blockchainInstance, err = blockchain.NewBlockchain(safebox.NewSafebox, storage, &height)
 		} else {
-			blockchainInstance, err = blockchain.NewBlockchain(storage, nil)
+			blockchainInstance, err = blockchain.NewBlockchain(safebox.NewSafebox, storage, nil)
 		}
 		if err != nil {
 			return err
@@ -152,7 +153,7 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 		return fn(blockchainInstance, storage)
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to initialize storage. %v", err)
+		return err
 	}
 	return nil
 }

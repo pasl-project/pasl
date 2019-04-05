@@ -2,9 +2,16 @@ package blockchain
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"testing"
+
+	"github.com/pasl-project/pasl/accounter"
+	"github.com/pasl-project/pasl/crypto"
+	"github.com/pasl-project/pasl/safebox/tx"
 
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/storage"
@@ -81,8 +88,93 @@ func (storage *MemoryStorage) DropSnapshot(context interface{}, height uint32) e
 	return fmt.Errorf("not implemented")
 }
 
+type MockSafebox struct {
+	hash []byte
+}
+
+func (s *MockSafebox) ToBlob() []byte {
+	return nil
+}
+func (s *MockSafebox) GetHashBuffer() []byte {
+	return nil
+}
+func (s *MockSafebox) GetHeight() uint32 {
+	return 0
+}
+func (s *MockSafebox) GetState() (height uint32, safeboxHash []byte, cumulativeDifficulty *big.Int) {
+	return 0, s.hash, nil
+}
+func (s *MockSafebox) GetFork() safebox.Fork {
+	return safebox.GetActiveFork(0, nil)
+}
+func (s *MockSafebox) GetForkByHeight(height uint32, prevSafeboxHash []byte) safebox.Fork {
+	return safebox.GetActiveFork(height, nil)
+}
+func (s *MockSafebox) SetFork(fork safebox.Fork) {}
+func (s *MockSafebox) Validate(operation tx.CommonOperation) error {
+	return nil
+}
+func (s *MockSafebox) Merge()    {}
+func (s *MockSafebox) Rollback() {}
+func (s *MockSafebox) GetUpdatedPacks() []uint32 {
+	return nil
+}
+func (s *MockSafebox) ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error) {
+	rand.Read(s.hash)
+	return nil, nil
+}
+func (s *MockSafebox) GetLastTimestamps(count uint32) (timestamps []uint32) {
+	return nil
+}
+func (s *MockSafebox) GetHashrate(blockIndex, blocksCount uint32) uint64 {
+	return 0
+}
+func (s *MockSafebox) GetAccount(number uint32) *accounter.Account {
+	return nil
+}
+func (s *MockSafebox) GetAccountPackSerialized(index uint32) ([]byte, error) {
+	return nil, nil
+}
+func (s *MockSafebox) SerializeAccounter() ([]byte, error) {
+	return nil, nil
+}
+
+func TestPendingBlockSafebox(t *testing.T) {
+	blockchain, _ := NewBlockchain(func(accounter *accounter.Accounter) safebox.SafeboxBase {
+		return &MockSafebox{
+			hash: make([]byte, sha256.Size),
+		}
+	}, NewMemoryStorage(), nil)
+
+	_, safeboxHash, _ := blockchain.GetState()
+	initialSafeboxHash := make([]byte, sha256.Size)
+	copy(initialSafeboxHash, safeboxHash)
+
+	public, _ := crypto.NewKeyByType(crypto.NIDsecp256k1)
+	transaction := tx.Transfer{
+		Source:      0,
+		OperationId: 1,
+		Destination: 2,
+		Amount:      3,
+		Fee:         4,
+		Payload:     nil,
+		PublicKey:   *public.Public,
+	}
+	if _, err := blockchain.TxPoolAddOperation(&transaction, false); err != nil {
+		t.Fatal(err)
+	}
+
+	block, err := blockchain.getPendingBlock(nil, nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(initialSafeboxHash, block.GetPrevSafeBoxHash()) {
+		t.FailNow()
+	}
+}
+
 func TestPendingBlock(t *testing.T) {
-	blockchain, err := NewBlockchain(NewMemoryStorage(), nil)
+	blockchain, err := NewBlockchain(safebox.NewSafebox, NewMemoryStorage(), nil)
 	if err != nil {
 		t.Fatal()
 	}
@@ -105,7 +197,7 @@ func TestPendingBlock(t *testing.T) {
 }
 
 func TestDeserializeAndPow(t *testing.T) {
-	blockchain, err := NewBlockchain(NewMemoryStorage(), nil)
+	blockchain, err := NewBlockchain(safebox.NewSafebox, NewMemoryStorage(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

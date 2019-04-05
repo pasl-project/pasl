@@ -88,15 +88,6 @@ func (this *Accounter) ToBlob() []byte {
 	return result.Bytes()
 }
 
-func (a *Accounter) resizeHashBufferUnsafe(length int) {
-	if len(a.hashBuffer) == length {
-		return
-	}
-	newHashBuffer := make([]byte, length)
-	copy(newHashBuffer[:], a.hashBuffer[:])
-	a.hashBuffer = newHashBuffer
-}
-
 func (a *Accounter) getHashUnsafe() []byte {
 	if len(a.dirty) == 0 {
 		hash := make([]byte, sha256.Size)

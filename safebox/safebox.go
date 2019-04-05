@@ -38,7 +38,26 @@ type Safebox struct {
 	lock      sync.RWMutex
 }
 
-func NewSafebox(accounter *accounter.Accounter) *Safebox {
+type SafeboxBase interface {
+	ToBlob() []byte
+	GetHeight() uint32
+	GetState() (height uint32, safeboxHash []byte, cumulativeDifficulty *big.Int)
+	GetFork() Fork
+	GetForkByHeight(height uint32, prevSafeboxHash []byte) Fork
+	SetFork(fork Fork)
+	Validate(operation tx.CommonOperation) error
+	Merge()
+	Rollback()
+	GetUpdatedPacks() []uint32
+	ProcessOperations(miner *crypto.Public, timestamp uint32, operations []tx.CommonOperation, difficulty *big.Int) (map[*accounter.Account]map[uint32]uint32, error)
+	GetLastTimestamps(count uint32) (timestamps []uint32)
+	GetHashrate(blockIndex, blocksCount uint32) uint64
+	GetAccount(number uint32) *accounter.Account
+	GetAccountPackSerialized(index uint32) ([]byte, error)
+	SerializeAccounter() ([]byte, error)
+}
+
+func NewSafebox(accounter *accounter.Accounter) SafeboxBase {
 	height, SafeboxHash, _ := accounter.GetState()
 	return &Safebox{
 		accounter: accounter,

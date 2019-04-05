@@ -688,8 +688,17 @@ func (this *Blockchain) GetOperation(txRipemd160Hash [20]byte) (*tx.TxMetadata, 
 	return tx.TxFromMetadata(metadataSerialized)
 }
 
-func (this *Blockchain) AccountOperationsForEach(number uint32, offset uint32, limit uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
-	serializedTxes, err := this.storage.GetAccountTxesData(number, offset, limit)
+func (b *Blockchain) AccountOperationsForEach(number uint32, offset uint32, limit uint32, fn func(operationId uint32, meta *tx.TxMetadata, tx tx.CommonOperation) bool) error {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
+	account := b.safebox.GetAccount(number)
+	if account == nil {
+		return fmt.Errorf("account doesn't exist")
+	}
+
+	limit = utils.MinUint32(limit, utils.MaxUint32(account.GetOperationsTotal(), offset)-offset)
+	serializedTxes, err := b.storage.GetAccountTxesData(number, offset, limit)
 	if err != nil {
 		return err
 	}

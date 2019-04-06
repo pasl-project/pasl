@@ -216,12 +216,12 @@ func (b *Blockchain) addBlock(target common.TargetBase, block safebox.BlockBase)
 	return newTarget, affectedByTx, nil
 }
 
-func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase, common.TargetBase) error) error {
+func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase) error) error {
 	currentTarget := this.target
 	affectedByBlocks := make(map[safebox.BlockBase]blockInfo)
 	blocksProcessed := make([]safebox.BlockBase, 0, len(blocks))
 
-	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Header.Index < blocks[j].Header.Index })
+	var affectedByTx map[*accounter.Account]map[uint32]uint32
 	for _, blockSerialized := range blocks {
 		meta := &safebox.BlockMetadata{
 			Index:           blockSerialized.Header.Index,
@@ -240,11 +240,10 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 		}
 		blocksProcessed = append(blocksProcessed, block)
 
-		newTarget, affectedByTx, err := this.addBlock(currentTarget, block)
+		currentTarget, affectedByTx, err = this.addBlock(currentTarget, block)
 		if err != nil {
 			return err
 		}
-		currentTarget = newTarget
 
 		affectedByBlocks[block] = blockInfo{
 			meta:         meta,
@@ -253,7 +252,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	}
 
 	if preSave != nil {
-		if err := (*preSave)(this.safebox, currentTarget); err != nil {
+		if err := (*preSave)(this.safebox); err != nil {
 			return err
 		}
 	}
@@ -338,7 +337,7 @@ func (this *Blockchain) processNewBlocksUnsafe(blocks []safebox.SerializedBlock,
 	return nil
 }
 
-func (b *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase, common.TargetBase) error) error {
+func (b *Blockchain) ProcessNewBlocks(blocks []safebox.SerializedBlock, preSave *func(safebox.SafeboxBase) error) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -431,18 +430,18 @@ func (this *Blockchain) AddAlternateChain(blocks []safebox.SerializedBlock) erro
 		if err != nil {
 			return err
 		}
-		newTarget, _, err := this.addBlock(currentTarget, block)
+		currentTarget, _, err = newBlockchain.addBlock(currentTarget, block)
 		if err != nil {
 			return err
 		}
-		currentTarget = newTarget
 	}
 	newBlockchain.target = currentTarget
+	newBlockchain.safebox.Merge()
 
 	this.lock.Lock()
 	defer this.lock.Unlock()
 
-	cumulativeDifficultyCheck := func(altSafebox safebox.SafeboxBase, target common.TargetBase) error {
+	cumulativeDifficultyCheck := func(altSafebox safebox.SafeboxBase) error {
 		_, _, cumulativeDifficulty := altSafebox.GetState()
 		_, _, currentCumulativeDifficulty := this.GetState()
 		if currentCumulativeDifficulty.Cmp(cumulativeDifficulty) >= 0 {

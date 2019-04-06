@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/pasl-project/pasl/blockchain"
@@ -131,6 +132,7 @@ func (this *PascalConnection) BlocksGet(from, to uint32) []safebox.SerializedBlo
 		finished.Wait()
 	}
 
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Header.Index < blocks[j].Header.Index })
 	return blocks
 }
 

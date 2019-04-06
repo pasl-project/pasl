@@ -221,8 +221,6 @@ func (this *manager) sync(ctx context.Context) bool {
 		utils.Tracef("[P2P %s] Fetching blocks %d .. %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, to, ahead, ahead/288)
 
 		blocks := conn.BlocksGet(nodeHeight, to)
-		nodeHeight += uint32(len(blocks))
-
 		switch err := this.blockchain.ProcessNewBlocks(blocks, nil); err {
 		case nil:
 			{
@@ -230,11 +228,12 @@ func (this *manager) sync(ctx context.Context) bool {
 			}
 		case blockchain.ErrParentNotFound:
 			{
-				utils.Tracef("[P2P %s] Fetching alternate chain", conn.logPrefix)
-
 				from := utils.MaxUint32(blocks[0].Header.Index, defaults.MaxAltChainLength) - defaults.MaxAltChainLength
-				blocks := conn.BlocksGet(from, to)
+				to = utils.MaxUint32(nodeHeight, 1) - 1
+				utils.Tracef("[P2P %s] Fetching alternate chain, downloading blocks %d .. %d", conn.logPrefix, from, to)
+				blocks = append(conn.BlocksGet(from, to), blocks...)
 
+				utils.Tracef("[P2P %s] Processing alternate chain, downloaded %d blocks", conn.logPrefix, len(blocks))
 				if err := this.blockchain.AddAlternateChain(blocks); err != nil {
 					utils.Tracef("[P2P %s] Failed to switch to alternate chain: %v", conn.logPrefix, err)
 					return false
@@ -247,6 +246,7 @@ func (this *manager) sync(ctx context.Context) bool {
 				return false
 			}
 		}
+		nodeHeight += uint32(len(blocks))
 
 		result = true
 	}

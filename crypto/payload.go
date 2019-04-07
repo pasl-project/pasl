@@ -65,13 +65,15 @@ func padToBlockSize(input []byte, blockSize int) []byte {
 	return result
 }
 
-func aes256Cbc(input []byte, key []byte, encrypt bool) ([]byte, error) {
+func aes256Cbc(input []byte, key []byte, iv []byte, encrypt bool) ([]byte, error) {
 	c, err := aes.NewCipher(key[:32])
 	if err != nil {
 		return nil, err
 	}
 
-	iv := make([]byte, c.BlockSize())
+	if iv == nil {
+		iv = make([]byte, c.BlockSize())
+	}
 	withPadding := padToBlockSize(input, c.BlockSize())
 	result := make([]byte, len(withPadding))
 
@@ -96,7 +98,7 @@ func Encrypt(public *ecdsa.PublicKey, payload []byte) ([]byte, error) {
 	}
 	derived := kdf(shared)
 
-	ciphertext, err := aes256Cbc(payload, derived[:32], true)
+	ciphertext, err := aes256Cbc(payload, derived[:32], nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +174,7 @@ func Decrypt(private *Key, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid MAC")
 	}
 
-	plaintext, err := aes256Cbc(ciphertext, derived[:32], false)
+	plaintext, err := aes256Cbc(ciphertext, derived[:32], nil, false)
 	if err != nil {
 		return nil, err
 	}

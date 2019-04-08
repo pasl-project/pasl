@@ -79,7 +79,15 @@ type manager struct {
 	doSync                 *sync.Cond
 }
 
-func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates chan<- PeerInfo, blocksUpdates <-chan safebox.SerializedBlock, txPoolUpdates <-chan tx.CommonOperation, timeoutRequest time.Duration, callback func(network.Manager) error) error {
+func WithManager(
+	nonce []byte,
+	blockchain *blockchain.Blockchain,
+	peerUpdates chan<- PeerInfo,
+	blocksUpdates <-chan safebox.SerializedBlock,
+	txPoolUpdates <-chan tx.CommonOperation,
+	timeoutRequest time.Duration,
+	callback func(network.Manager) error,
+) error {
 	manager := &manager{
 		timeoutRequest: timeoutRequest,
 		blockchain:     blockchain,
@@ -107,6 +115,23 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	manager.waitGroup.Add(1)
+	go func() {
+		defer manager.waitGroup.Done()
+		for {
+			select {
+			case block := <-manager.blocksUpdates:
+				utils.Tracef("Broadcasting block")
+				manager.broadcastBlock(&block, nil)
+			case transaction := <-manager.txPoolUpdates:
+				utils.Tracef("Broadcasting tx")
+				manager.broadcastTx(transaction, nil)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	manager.waitGroup.Add(1)
 	go func() {
@@ -145,12 +170,6 @@ func WithManager(nonce []byte, blockchain *blockchain.Blockchain, peerUpdates ch
 						utils.Tracef("Synchronizing with the network")
 					}
 				}
-			case block := <-manager.blocksUpdates:
-				utils.Tracef("Broadcasting tx")
-				manager.broadcastBlock(&block, nil)
-			case transaction := <-manager.txPoolUpdates:
-				utils.Tracef("Broadcasting tx")
-				manager.broadcastTx(transaction, nil)
 			case <-ctx.Done():
 				return
 			}

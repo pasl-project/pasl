@@ -21,6 +21,7 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -30,6 +31,10 @@ import (
 
 	"github.com/modern-go/concurrent"
 	"github.com/pasl-project/pasl/utils"
+)
+
+var (
+	ErrLoopbackConnection = errors.New("Loopback connection")
 )
 
 type Config struct {
@@ -51,11 +56,6 @@ type Peer struct {
 	LastSeen             uint64
 }
 
-type connectionCloser struct {
-	conn    net.Conn
-	onClose func()
-}
-
 type Connection struct {
 	Address        string
 	Outgoing       bool
@@ -63,7 +63,7 @@ type Connection struct {
 	OnStateUpdated func()
 }
 
-func WithNode(config Config, peers *PeersList, onNewConnection chan<- *Connection, fn func(node Node) error) error {
+func WithNode(config Config, peers *PeersList, onNewConnection func(context.Context, *Connection) error, fn func(node Node) error) error {
 	node := Node{
 		config: config,
 		peers:  peers,
@@ -93,11 +93,16 @@ func WithNode(config Config, peers *PeersList, onNewConnection chan<- *Connectio
 				return
 			}
 
-			onNewConnection <- &Connection{
-				Address:        "tcp://" + conn.RemoteAddr().String(),
+			address := "tcp://" + conn.RemoteAddr().String()
+			switch err = onNewConnection(ctx, &Connection{
+				Address:        address,
 				Outgoing:       false,
 				Transport:      conn,
 				OnStateUpdated: nil,
+			}); err {
+			case ErrLoopbackConnection:
+				peers.Forbid(address)
+			default:
 			}
 		}
 	})
@@ -134,16 +139,18 @@ func WithNode(config Config, peers *PeersList, onNewConnection chan<- *Connectio
 						return
 					}
 
-					onNewConnection <- &Connection{
-						Address:  "tcp://" + conn.RemoteAddr().String(),
-						Outgoing: true,
-						Transport: &connectionCloser{
-							conn: conn,
-							onClose: func() {
-								node.peers.SetDisconnected(peer)
-							},
-						},
+					defer node.peers.SetDisconnected(peer)
+
+					address := "tcp://" + conn.RemoteAddr().String()
+					switch err = onNewConnection(ctx, &Connection{
+						Address:        address,
+						Outgoing:       true,
+						Transport:      conn,
 						OnStateUpdated: func() { peer.LastSeen = uint64(time.Now().Unix()) },
+					}); err {
+					case ErrLoopbackConnection:
+						peers.Forbid(address)
+					default:
 					}
 				}(peer)
 			}
@@ -182,15 +189,4 @@ func (node *Node) AddPeer(address string) error {
 
 func (node *Node) AddPeerSerialized(serialized []byte) error {
 	return node.peers.AddSerialized(serialized)
-}
-
-func (c *connectionCloser) Read(p []byte) (n int, err error) {
-	return c.conn.Read(p)
-}
-func (c *connectionCloser) Write(p []byte) (n int, err error) {
-	return c.conn.Write(p)
-}
-func (c *connectionCloser) Close() error {
-	c.onClose()
-	return c.conn.Close()
 }

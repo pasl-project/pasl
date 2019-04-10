@@ -32,6 +32,7 @@ import (
 
 type PeersList struct {
 	Connected map[string]*Peer
+	Forbidden map[string]struct{}
 	Queued    *ordered_map.OrderedMap
 	Lock      sync.RWMutex
 }
@@ -39,6 +40,7 @@ type PeersList struct {
 func NewPeersList() *PeersList {
 	return &PeersList{
 		Connected: make(map[string]*Peer),
+		Forbidden: make(map[string]struct{}),
 		Queued:    ordered_map.NewOrderedMap(),
 	}
 }
@@ -47,6 +49,9 @@ func (this *PeersList) Add(address string, peer *Peer) bool {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
 
+	if _, exists := this.Forbidden[address]; exists {
+		return false
+	}
 	if _, exists := this.Queued.Get(address); exists {
 		return false
 	}
@@ -64,6 +69,15 @@ func (this *PeersList) Add(address string, peer *Peer) bool {
 	this.Queued.Set(address, peer)
 
 	return true
+}
+
+func (p *PeersList) Forbid(address string) {
+	p.Lock.Lock()
+	defer p.Lock.Unlock()
+
+	p.Queued.Delete(address)
+	delete(p.Connected, address)
+	p.Forbidden[address] = struct{}{}
 }
 
 func (this *PeersList) AddSerialized(serialized []byte) error {
@@ -113,6 +127,11 @@ func (this *PeersList) ScheduleReconnect(maxActive int) []*Peer {
 func (this *PeersList) SetDisconnected(peer *Peer) {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
+
+	if _, exists := this.Forbidden[peer.Address]; exists {
+		return
+	}
+
 	delete(this.Connected, peer.Address)
 	this.Queued.Set(peer.Address, peer)
 }

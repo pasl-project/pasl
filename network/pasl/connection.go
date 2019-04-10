@@ -164,7 +164,7 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 	}
 
 	if bytes.Equal(packet.Nonce, this.nonce) {
-		return fmt.Errorf("[P2P %s] Loopback connection", this.logPrefix)
+		return network.ErrLoopbackConnection
 	}
 
 	utils.Tracef("[P2P %s] Top block %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))

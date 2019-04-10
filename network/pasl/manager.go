@@ -58,8 +58,6 @@ const (
 )
 
 type Manager struct {
-	OnNewConnection chan *network.Connection
-
 	blockchain             *blockchain.Blockchain
 	blocksUpdates          <-chan safebox.SerializedBlock
 	closed                 chan *PascalConnection
@@ -92,8 +90,6 @@ func WithManager(
 	callback func(m *Manager) error,
 ) error {
 	manager := &Manager{
-		OnNewConnection: make(chan *network.Connection),
-
 		blockchain:     blockchain,
 		blocksUpdates:  blocksUpdates,
 		closed:         make(chan *PascalConnection),
@@ -134,12 +130,6 @@ func WithManager(
 			case transaction := <-manager.txPoolUpdates:
 				utils.Tracef("Broadcasting tx")
 				manager.broadcastTx(transaction, nil)
-			case c := <-manager.OnNewConnection:
-				manager.waitGroup.Add(1)
-				go func() {
-					defer manager.waitGroup.Done()
-					manager.handleConnection(ctx, c)
-				}()
 			case <-ctx.Done():
 				return
 			}
@@ -307,16 +297,7 @@ func (m *Manager) broadcastTx(transaction tx.CommonOperation, except *PascalConn
 	}, except)
 }
 
-func (m *Manager) handleConnection(ctx context.Context, c *network.Connection) {
-	defer c.Transport.Close()
-
-	link, err := m.OnOpen(c.Address, c.Transport, c.Outgoing, c.OnStateUpdated)
-	if err != nil {
-		utils.Tracef("OnOpen failed: %v", err)
-		return
-	}
-	defer m.OnClose(link)
-
+func (m *Manager) OnNewConnection(ctx context.Context, c *network.Connection) error {
 	stopper := concurrent.NewUnboundedExecutor()
 	stopper.Go(func(localContext context.Context) {
 		select {
@@ -325,18 +306,26 @@ func (m *Manager) handleConnection(ctx context.Context, c *network.Connection) {
 		case <-localContext.Done():
 			break
 		}
+		c.Transport.Close()
 	})
 	defer stopper.StopAndWaitForever()
+
+	link, err := m.OnOpen(c.Address, c.Transport, c.Outgoing, c.OnStateUpdated)
+	if err != nil {
+		utils.Tracef("OnOpen failed: %v", err)
+		return err
+	}
+	defer m.OnClose(link)
 
 	buf := make([]byte, 10*1024)
 	for {
 		read, err := c.Transport.Read(buf)
 		if err != nil {
-			break
+			return err
 		}
 		if err = m.OnData(link, buf[:read]); err != nil {
 			utils.Tracef("OnData failed: %v", err)
-			break
+			return err
 		}
 	}
 }

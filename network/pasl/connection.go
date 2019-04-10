@@ -222,7 +222,7 @@ func (this *PascalConnection) onGetBlocksRequest(request *requestResponse, paylo
 		packet.ToIndex = packet.FromIndex + total
 	}
 
-	serialized := make([]safebox.SerializedBlock, total)
+	serialized := make([]safebox.SerializedBlock, 0, total)
 	for index := packet.FromIndex; index <= packet.ToIndex; index++ {
 		if block, err := this.blockchain.GetBlock(index); err == nil {
 			serialized = append(serialized, this.blockchain.SerializeBlock(block))

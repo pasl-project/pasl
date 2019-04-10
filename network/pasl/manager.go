@@ -247,7 +247,7 @@ func (this *Manager) sync(ctx context.Context) bool {
 		switch err := this.blockchain.ProcessNewBlocks(blocks, nil); err {
 		case nil:
 			{
-				continue
+				nodeHeight += uint32(len(blocks))
 			}
 		case blockchain.ErrParentNotFound:
 			{
@@ -269,7 +269,6 @@ func (this *Manager) sync(ctx context.Context) bool {
 				return false
 			}
 		}
-		nodeHeight += uint32(len(blocks))
 
 		result = true
 	}

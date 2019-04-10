@@ -317,9 +317,10 @@ func (m *Manager) OnNewConnection(ctx context.Context, c *network.Connection) er
 		c.Outgoing,
 		c.OnStateUpdated,
 		func(p *PascalConnection) error {
-			if bytes.Equal(m.nonce, p.GetNonce()) {
+			if p.outgoing && bytes.Equal(m.nonce, p.GetNonce()) {
 				return network.ErrLoopbackConnection
 			}
+
 			err := error(nil)
 			m.forEachConnection(func(conn *PascalConnection) {
 				if bytes.Equal(conn.GetNonce(), p.GetNonce()) {
@@ -369,9 +370,10 @@ func (this *Manager) OnOpen(
 		onNewBlock:     this.onNewBlock,
 		onStateUpdated: onStateUpdated,
 		postHandshake:  postHandshake,
+		outgoing:       isOutgoing,
 	}
 
-	if err := conn.OnOpen(isOutgoing); err != nil {
+	if err := conn.OnOpen(); err != nil {
 		return nil, err
 	}
 

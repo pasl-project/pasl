@@ -58,9 +58,10 @@ type PascalConnection struct {
 	onStateUpdated func()
 	postHandshake  func(*PascalConnection) error
 	handshakeDone  uint32
+	outgoing       bool
 }
 
-func (this *PascalConnection) OnOpen(isOutgoing bool) error {
+func (this *PascalConnection) OnOpen() error {
 	this.underlying.knownOperations[hello] = this.onHelloRequest
 	this.underlying.knownOperations[errorReport] = this.onErrorReport
 	this.underlying.knownOperations[message] = this.onMessageRequest
@@ -69,7 +70,7 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 	this.underlying.knownOperations[newBlock] = this.onNewBlockNotification
 	this.underlying.knownOperations[newOperations] = this.onNewOperationsNotification
 
-	if !isOutgoing {
+	if !this.outgoing {
 		return nil
 	}
 

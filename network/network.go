@@ -94,17 +94,12 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 				return
 			}
 
-			address := "tcp://" + conn.RemoteAddr().String()
-			switch err = onNewConnection(ctx, &Connection{
-				Address:        address,
+			onNewConnection(ctx, &Connection{
+				Address:        "tcp://" + conn.RemoteAddr().String(),
 				Outgoing:       false,
 				Transport:      conn,
 				OnStateUpdated: nil,
-			}); err {
-			case ErrLoopbackConnection:
-				node.peers.Forbid(address)
-			default:
-			}
+			})
 		}
 	})
 	defer handler.StopAndWaitForever()

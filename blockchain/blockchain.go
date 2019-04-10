@@ -572,9 +572,6 @@ func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.Serializ
 }
 
 func (b *Blockchain) GetTopBlock() (safebox.BlockBase, error) {
-	b.lock.Lock()
-	defer b.lock.Unlock()
-
 	if height := b.GetHeight(); height > 0 {
 		return b.GetBlock(height - 1)
 	}

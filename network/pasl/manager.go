@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pasl
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"math/rand"
@@ -310,7 +311,24 @@ func (m *Manager) OnNewConnection(ctx context.Context, c *network.Connection) er
 	})
 	defer stopper.StopAndWaitForever()
 
-	link, err := m.OnOpen(c.Address, c.Transport, c.Outgoing, c.OnStateUpdated)
+	link, err := m.OnOpen(
+		c.Address,
+		c.Transport,
+		c.Outgoing,
+		c.OnStateUpdated,
+		func(p *PascalConnection) error {
+			if bytes.Equal(m.nonce, p.GetNonce()) {
+				return network.ErrLoopbackConnection
+			}
+			err := error(nil)
+			m.forEachConnection(func(conn *PascalConnection) {
+				if bytes.Equal(conn.GetNonce(), p.GetNonce()) {
+					err = network.ErrDuplicateConnection
+				}
+			}, p)
+			return err
+		},
+	)
 	if err != nil {
 		utils.Tracef("OnOpen failed: %v", err)
 		return err
@@ -330,7 +348,13 @@ func (m *Manager) OnNewConnection(ctx context.Context, c *network.Connection) er
 	}
 }
 
-func (this *Manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error) {
+func (this *Manager) OnOpen(
+	address string,
+	transport io.WriteCloser,
+	isOutgoing bool,
+	onStateUpdated func(),
+	postHandshake func(*PascalConnection) error,
+) (interface{}, error) {
 	conn := &PascalConnection{
 		underlying:     NewProtocol(transport, this.timeoutRequest),
 		logPrefix:      address,
@@ -344,6 +368,7 @@ func (this *Manager) OnOpen(address string, transport io.WriteCloser, isOutgoing
 		closed:         this.closed,
 		onNewBlock:     this.onNewBlock,
 		onStateUpdated: onStateUpdated,
+		postHandshake:  postHandshake,
 	}
 
 	if err := conn.OnOpen(isOutgoing); err != nil {

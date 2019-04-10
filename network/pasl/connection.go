@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/defaults"
@@ -55,6 +56,8 @@ type PascalConnection struct {
 	stateLock      sync.RWMutex
 	closed         chan *PascalConnection
 	onStateUpdated func()
+	postHandshake  func(*PascalConnection) error
+	handshakeDone  uint32
 }
 
 func (this *PascalConnection) OnOpen(isOutgoing bool) error {
@@ -98,6 +101,10 @@ func (this *PascalConnection) SetState(topBlockIndex uint32, prevSafeboxHash []b
 	}
 	copy(state.prevSafeboxHash[:32], prevSafeboxHash)
 	this.state = state
+}
+
+func (p *PascalConnection) GetNonce() []byte {
+	return p.nonce
 }
 
 func (this *PascalConnection) GetState() (uint32, []byte) {
@@ -163,12 +170,15 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 		return err
 	}
 
-	if bytes.Equal(packet.Nonce, this.nonce) {
-		return network.ErrLoopbackConnection
-	}
-
 	utils.Tracef("[P2P %s] Top block %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
 	this.SetState(packet.Block.Index, packet.Block.PrevSafeboxHash)
+
+	if atomic.CompareAndSwapUint32(&this.handshakeDone, 0, 1) {
+		this.nonce = packet.Nonce
+		if err := this.postHandshake(this); err != nil {
+			return err
+		}
+	}
 
 	for _, peer := range packet.Peers {
 		this.peerUpdates <- peer

@@ -34,7 +34,8 @@ import (
 )
 
 var (
-	ErrLoopbackConnection = errors.New("Loopback connection")
+	ErrDuplicateConnection = errors.New("Duplicate connection")
+	ErrLoopbackConnection  = errors.New("Loopback connection")
 )
 
 type Config struct {

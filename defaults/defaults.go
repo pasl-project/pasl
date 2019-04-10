@@ -32,7 +32,7 @@ const (
 
 const (
 	NetId                   uint32        = 0x5891E4FF
-	BootstrapNodes          string        = "pascallite.ddns.net:4004,pascallite2.ddns.net:4004,pascallite3.ddns.net:4004,pascallite4.dynamic-dns.net:4004,pascallite5.dynamic-dns.net:4004,pascallite.dynamic-dns.net:4004,pascallite2.dynamic-dns.net:4004,pascallite3.dynamic-dns.net:4004"
+	BootstrapNodes          string        = "tcp://pascallite.ddns.net:4004,tcp://pascallite2.ddns.net:4004,tcp://pascallite3.ddns.net:4004,tcp://pascallite4.dynamic-dns.net:4004,tcp://pascallite5.dynamic-dns.net:4004,tcp://pascallite.dynamic-dns.net:4004,tcp://pascallite2.dynamic-dns.net:4004,tcp://pascallite3.dynamic-dns.net:4004"
 	P2PBindAddress          string        = "0.0.0.0"
 	P2PPort                 uint16        = 4004
 	RPCBindHost             string        = "127.0.0.1"

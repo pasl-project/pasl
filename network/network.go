@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 
@@ -39,10 +39,9 @@ type Config struct {
 	TimeoutConnect time.Duration
 }
 
-type Node interface {
-	AddPeer(network, address string) error
-	AddPeerSerialized(network string, serialized []byte) error
-	GetPeersByNetwork(network string) map[string]Peer
+type Node struct {
+	config Config
+	peers  *PeersList
 }
 
 type Peer struct {
@@ -52,23 +51,22 @@ type Peer struct {
 	LastSeen             uint64
 }
 
-type Manager interface {
-	OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error)
-	OnData(interface{}, []byte) error
-	OnClose(interface{})
+type connectionCloser struct {
+	conn    net.Conn
+	onClose func()
 }
 
-type nodeInternal struct {
-	Config  Config
-	Peers   *PeersList
-	Manager Manager
+type Connection struct {
+	Address        string
+	Outgoing       bool
+	Transport      io.ReadWriteCloser
+	OnStateUpdated func()
 }
 
-func WithNode(config Config, manager Manager, fn func(node Node) error) error {
-	node := nodeInternal{
-		Config:  config,
-		Peers:   NewPeersList(),
-		Manager: manager,
+func WithNode(config Config, peers *PeersList, onNewConnection chan<- *Connection, fn func(node Node) error) error {
+	node := Node{
+		config: config,
+		peers:  peers,
 	}
 
 	l, err := net.Listen("tcp", config.ListenAddr)
@@ -95,12 +93,12 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 				return
 			}
 
-			wg.Add(1)
-			go func(conn net.Conn) {
-				defer wg.Done()
-
-				node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), false, nil)
-			}(conn)
+			onNewConnection <- &Connection{
+				Address:        "tcp://" + conn.RemoteAddr().String(),
+				Outgoing:       false,
+				Transport:      conn,
+				OnStateUpdated: nil,
+			}
 		}
 	})
 	defer handler.StopAndWaitForever()
@@ -119,85 +117,80 @@ func WithNode(config Config, manager Manager, fn func(node Node) error) error {
 				break
 			}
 
-			for _, peer := range node.Peers.ScheduleReconnect((int)(node.Config.MaxOutgoing)) {
+			for _, peer := range node.peers.ScheduleReconnect((int)(node.config.MaxOutgoing)) {
 				wg.Add(1)
 				go func(peer *Peer) {
 					defer wg.Done()
-					defer node.Peers.SetDisconnected(peer)
 
-					d := net.Dialer{Timeout: node.Config.TimeoutConnect}
-					conn, err := d.DialContext(ctx, "tcp", peer.Address)
+					parsed, err := url.Parse(peer.Address)
+					if err != nil {
+						return
+					}
+
+					d := net.Dialer{Timeout: node.config.TimeoutConnect}
+					conn, err := d.DialContext(ctx, "tcp", parsed.Host)
 					if err != nil {
 						// utils.Tracef("Connection failed: %v", err)
 						return
 					}
 
-					node.HandleConnection(ctx, conn, "tcp://"+conn.RemoteAddr().String(), true, func() { peer.LastSeen = uint64(time.Now().Unix()) })
+					onNewConnection <- &Connection{
+						Address:  "tcp://" + conn.RemoteAddr().String(),
+						Outgoing: true,
+						Transport: &connectionCloser{
+							conn: conn,
+							onClose: func() {
+								node.peers.SetDisconnected(peer)
+							},
+						},
+						OnStateUpdated: func() { peer.LastSeen = uint64(time.Now().Unix()) },
+					}
 				}(peer)
 			}
 		}
 	})
 	defer scheduler.StopAndWaitForever()
 
-	return fn(&node)
+	return fn(node)
 }
 
-func (node *nodeInternal) GetPeersByNetwork(network string) map[string]Peer {
-	return node.Peers.GetAllSeen()
+func (node *Node) GetPeersByNetwork(network string) map[string]Peer {
+	return node.peers.GetAllSeen()
 }
 
-func (node *nodeInternal) AddPeer(network, address string) error {
-	if network != "tcp" {
-		return fmt.Errorf("Unsupported network '%v'", network)
+func (node *Node) AddPeer(address string) error {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return err
 	}
 
-	host := strings.Split(address, ":")[0]
-	if ip := net.ParseIP(host); ip != nil {
-		if !ip.IsGlobalUnicast() {
-			return fmt.Errorf("IP Address %s didn't pass the validation", address)
-		}
-		node.Peers.Add(address, nil)
-	} else if tcp, err := net.ResolveTCPAddr("tcp", address); err == nil {
-		node.Peers.Add(tcp.String(), nil)
-	} else {
+	if parsed.Scheme != "tcp" {
+		return fmt.Errorf("Unsupported network '%v'", parsed.Scheme)
+	}
+
+	tcp, err := net.ResolveTCPAddr("tcp", parsed.Host)
+	if err != nil {
 		return fmt.Errorf("Failed to resolve TCP addresss %s %v", address, err)
 	}
+	if !tcp.IP.IsGlobalUnicast() {
+		return fmt.Errorf("IP Address %s didn't pass the validation", address)
+	}
+
+	node.peers.Add("tcp://"+tcp.String(), nil)
 	return nil
 }
 
-func (node *nodeInternal) AddPeerSerialized(network string, serialized []byte) error {
-	return node.Peers.AddSerialized(serialized)
+func (node *Node) AddPeerSerialized(serialized []byte) error {
+	return node.peers.AddSerialized(serialized)
 }
 
-func (node *nodeInternal) HandleConnection(ctx context.Context, conn net.Conn, address string, isOutgoing bool, onStateUpdated func()) {
-	link, err := node.Manager.OnOpen(address, conn, isOutgoing, onStateUpdated)
-	if err != nil {
-		utils.Tracef("OnOpen failed: %v", err)
-		return
-	}
-	defer node.Manager.OnClose(link)
-
-	stopper := concurrent.NewUnboundedExecutor()
-	stopper.Go(func(localContext context.Context) {
-		defer conn.Close()
-		select {
-		case <-ctx.Done():
-			break
-		case <-localContext.Done():
-			break
-		}
-	})
-	defer stopper.StopAndWaitForever()
-
-	buf := make([]byte, 10*1024)
-	for {
-		read, err := conn.Read(buf)
-		if err != nil {
-			break
-		}
-		if err = node.Manager.OnData(link, buf[:read]); err != nil {
-			utils.Tracef("OnData failed: %v", err)
-			break
-		}
-	}
+func (c *connectionCloser) Read(p []byte) (n int, err error) {
+	return c.conn.Read(p)
+}
+func (c *connectionCloser) Write(p []byte) (n int, err error) {
+	return c.conn.Write(p)
+}
+func (c *connectionCloser) Close() error {
+	c.onClose()
+	return c.conn.Close()
 }

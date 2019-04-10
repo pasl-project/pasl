@@ -29,6 +29,7 @@ import (
 
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/defaults"
+	"github.com/pasl-project/pasl/network"
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/safebox/tx"
 	"github.com/pasl-project/pasl/utils"
@@ -43,6 +44,8 @@ type PascalConnection struct {
 	logPrefix      string
 	underlying     *protocol
 	blockchain     *blockchain.Blockchain
+	p2pPort        uint16
+	peers          *network.PeersList
 	nonce          []byte
 	peerUpdates    chan<- PeerInfo
 	onStateUpdate  chan<- *PascalConnection
@@ -72,7 +75,7 @@ func (this *PascalConnection) OnOpen(isOutgoing bool) error {
 		return err
 	}
 
-	payload := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
+	payload := generateHello(this.p2pPort, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), this.peers.GetAllSeen(), defaults.UserAgent)
 	return this.underlying.sendRequest(hello, payload, this.onHelloCommon)
 }
 
@@ -184,7 +187,7 @@ func (this *PascalConnection) onHelloRequest(request *requestResponse, payload [
 		return nil, err
 	}
 
-	out := generateHello(0, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
+	out := generateHello(this.p2pPort, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), nil, defaults.UserAgent)
 	request.result.setError(success)
 	return out, nil
 }

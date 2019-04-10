@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/modern-go/concurrent"
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/network"
@@ -56,52 +57,58 @@ const (
 	syncing           = iota
 )
 
-type manager struct {
-	network.Manager
+type Manager struct {
+	OnNewConnection chan *network.Connection
 
-	waitGroup sync.WaitGroup
-
-	blockchain *blockchain.Blockchain
-	nonce      []byte
-
-	timeoutRequest         time.Duration
+	blockchain             *blockchain.Blockchain
 	blocksUpdates          <-chan safebox.SerializedBlock
-	peerUpdates            chan<- PeerInfo
-	txPoolUpdates          <-chan tx.CommonOperation
-	onStateUpdate          chan *PascalConnection
+	closed                 chan *PascalConnection
+	doSync                 *sync.Cond
+	doSyncValue            bool
+	initializedConnections sync.Map
+	nonce                  []byte
 	onNewBlock             chan *eventNewBlock
 	onNewOperation         chan *eventNewOperation
+	onStateUpdate          chan *PascalConnection
 	onSyncState            chan syncState
+	p2pPort                uint16
+	peers                  *network.PeersList
+	peerUpdates            chan<- PeerInfo
 	prevSyncState          syncState
-	closed                 chan *PascalConnection
-	initializedConnections sync.Map
-	doSyncValue            bool
-	doSync                 *sync.Cond
+	timeoutRequest         time.Duration
+	txPoolUpdates          <-chan tx.CommonOperation
+	waitGroup              sync.WaitGroup
 }
 
 func WithManager(
 	nonce []byte,
 	blockchain *blockchain.Blockchain,
+	p2pPort uint16,
+	peers *network.PeersList,
 	peerUpdates chan<- PeerInfo,
 	blocksUpdates <-chan safebox.SerializedBlock,
 	txPoolUpdates <-chan tx.CommonOperation,
 	timeoutRequest time.Duration,
-	callback func(network.Manager) error,
+	callback func(m *Manager) error,
 ) error {
-	manager := &manager{
-		timeoutRequest: timeoutRequest,
+	manager := &Manager{
+		OnNewConnection: make(chan *network.Connection),
+
 		blockchain:     blockchain,
-		nonce:          nonce,
 		blocksUpdates:  blocksUpdates,
-		peerUpdates:    peerUpdates,
-		txPoolUpdates:  txPoolUpdates,
-		onStateUpdate:  make(chan *PascalConnection),
-		onNewOperation: make(chan *eventNewOperation),
-		onSyncState:    make(chan syncState),
-		prevSyncState:  syncing,
 		closed:         make(chan *PascalConnection),
-		onNewBlock:     make(chan *eventNewBlock),
 		doSync:         sync.NewCond(&sync.Mutex{}),
+		nonce:          nonce,
+		onNewBlock:     make(chan *eventNewBlock),
+		onNewOperation: make(chan *eventNewOperation),
+		onStateUpdate:  make(chan *PascalConnection),
+		onSyncState:    make(chan syncState),
+		p2pPort:        p2pPort,
+		peers:          peers,
+		peerUpdates:    peerUpdates,
+		prevSyncState:  syncing,
+		timeoutRequest: timeoutRequest,
+		txPoolUpdates:  txPoolUpdates,
 	}
 	defer manager.waitGroup.Wait()
 
@@ -127,6 +134,12 @@ func WithManager(
 			case transaction := <-manager.txPoolUpdates:
 				utils.Tracef("Broadcasting tx")
 				manager.broadcastTx(transaction, nil)
+			case c := <-manager.OnNewConnection:
+				manager.waitGroup.Add(1)
+				go func() {
+					defer manager.waitGroup.Done()
+					manager.handleConnection(ctx, c)
+				}()
 			case <-ctx.Done():
 				return
 			}
@@ -200,7 +213,7 @@ func WithManager(
 	return callback(manager)
 }
 
-func (this *manager) sync(ctx context.Context) bool {
+func (this *Manager) sync(ctx context.Context) bool {
 	result := false
 
 	nodeHeight := this.blockchain.GetHeight()
@@ -273,7 +286,7 @@ func (this *manager) sync(ctx context.Context) bool {
 	return result
 }
 
-func (this *manager) forEachConnection(fn func(*PascalConnection), except *PascalConnection) {
+func (this *Manager) forEachConnection(fn func(*PascalConnection), except *PascalConnection) {
 	this.initializedConnections.Range(func(conn, height interface{}) bool {
 		if conn != except {
 			fn(conn.(*PascalConnection))
@@ -282,23 +295,59 @@ func (this *manager) forEachConnection(fn func(*PascalConnection), except *Pasca
 	})
 }
 
-func (m *manager) broadcastBlock(block *safebox.SerializedBlock, except *PascalConnection) {
+func (m *Manager) broadcastBlock(block *safebox.SerializedBlock, except *PascalConnection) {
 	m.forEachConnection(func(conn *PascalConnection) {
 		conn.BroadcastBlock(block)
 	}, except)
 }
 
-func (m *manager) broadcastTx(transaction tx.CommonOperation, except *PascalConnection) {
+func (m *Manager) broadcastTx(transaction tx.CommonOperation, except *PascalConnection) {
 	m.forEachConnection(func(conn *PascalConnection) {
 		conn.BroadcastTx(transaction)
 	}, except)
 }
 
-func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error) {
+func (m *Manager) handleConnection(ctx context.Context, c *network.Connection) {
+	defer c.Transport.Close()
+
+	link, err := m.OnOpen(c.Address, c.Transport, c.Outgoing, c.OnStateUpdated)
+	if err != nil {
+		utils.Tracef("OnOpen failed: %v", err)
+		return
+	}
+	defer m.OnClose(link)
+
+	stopper := concurrent.NewUnboundedExecutor()
+	stopper.Go(func(localContext context.Context) {
+		select {
+		case <-ctx.Done():
+			break
+		case <-localContext.Done():
+			break
+		}
+	})
+	defer stopper.StopAndWaitForever()
+
+	buf := make([]byte, 10*1024)
+	for {
+		read, err := c.Transport.Read(buf)
+		if err != nil {
+			break
+		}
+		if err = m.OnData(link, buf[:read]); err != nil {
+			utils.Tracef("OnData failed: %v", err)
+			break
+		}
+	}
+}
+
+func (this *Manager) OnOpen(address string, transport io.WriteCloser, isOutgoing bool, onStateUpdated func()) (interface{}, error) {
 	conn := &PascalConnection{
 		underlying:     NewProtocol(transport, this.timeoutRequest),
 		logPrefix:      address,
 		blockchain:     this.blockchain,
+		p2pPort:        this.p2pPort,
+		peers:          this.peers,
 		nonce:          this.nonce,
 		peerUpdates:    this.peerUpdates,
 		onStateUpdate:  this.onStateUpdate,
@@ -316,11 +365,11 @@ func (this *manager) OnOpen(address string, transport io.WriteCloser, isOutgoing
 	return conn, nil
 }
 
-func (this *manager) OnData(connection interface{}, data []byte) error {
+func (this *Manager) OnData(connection interface{}, data []byte) error {
 	return connection.(*PascalConnection).OnData(data)
 }
 
-func (this *manager) OnClose(connection interface{}) {
+func (this *Manager) OnClose(connection interface{}) {
 	connection.(*PascalConnection).OnClose()
 	this.waitGroup.Done()
 }

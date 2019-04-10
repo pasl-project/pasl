@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package pasl
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -75,13 +76,30 @@ func (this *helloHandler) getTcpPeersList() []PeerInfo {
 	return peers
 }
 
-func generateHello(nodePort uint16, nonce []byte, pendingBlock safebox.SerializedBlockHeader, peers []PeerInfo, userAgent string) []byte {
+func generateHello(nodePort uint16, nonce []byte, pendingBlock safebox.SerializedBlockHeader, peers map[string]network.Peer, userAgent string) []byte {
+	whitePeers := make([]PeerInfo, 0, len(peers))
+	for address := range peers {
+		parsed, err := url.Parse(address)
+		if err != nil {
+			continue
+		}
+		port, err := strconv.ParseUint(parsed.Port(), 10, 16)
+		if err != nil {
+			continue
+		}
+		whitePeers = append(whitePeers, PeerInfo{
+			Host:        parsed.Hostname(),
+			Port:        uint16(port),
+			LastConnect: peers[address].LastConnectTimestamp,
+		})
+	}
+
 	return utils.Serialize(packetHello{
 		NodePort:  nodePort,
 		Nonce:     nonce,
 		Time:      uint32(time.Now().Unix()),
 		Block:     pendingBlock,
-		Peers:     peers,
+		Peers:     whitePeers,
 		UserAgent: userAgent,
 	})
 }

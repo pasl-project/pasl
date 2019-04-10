@@ -166,8 +166,9 @@ func run(cliContext *cli.Context) error {
 		height, safeboxHash, cumulativeDifficulty := blockchain.GetState()
 		utils.Ftracef(cliContext.App.Writer, "Blockchain loaded, height %d safeboxHash %s cumulativeDifficulty %s", height, hex.EncodeToString(safeboxHash), cumulativeDifficulty.String())
 
+		p2pPort := uint16(cliContext.GlobalUint(p2pPortFlag.GetName()))
 		config := network.Config{
-			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, cliContext.GlobalUint(p2pPortFlag.GetName())),
+			ListenAddr:     fmt.Sprintf("%s:%d", defaults.P2PBindAddress, p2pPort),
 			MaxIncoming:    defaults.MaxIncoming,
 			MaxOutgoing:    defaults.MaxOutgoing,
 			TimeoutConnect: defaults.TimeoutConnect,
@@ -179,13 +180,14 @@ func run(cliContext *cli.Context) error {
 		}
 		nonce := utils.Serialize(key.Public)
 
+		peers := network.NewPeersList()
 		peerUpdates := make(chan pasl.PeerInfo)
-		return pasl.WithManager(nonce, blockchain, peerUpdates, blockchain.BlocksUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager network.Manager) error {
-			return network.WithNode(config, manager, func(node network.Node) error {
+		return pasl.WithManager(nonce, blockchain, p2pPort, peers, peerUpdates, blockchain.BlocksUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager *pasl.Manager) error {
+			return network.WithNode(config, peers, manager.OnNewConnection, func(node network.Node) error {
 
 				if cliContext.IsSet(exclusiveNodesFlag.GetName()) {
 					for _, hostPort := range strings.Split(cliContext.String(exclusiveNodesFlag.GetName()), ",") {
-						if err = node.AddPeer("tcp", hostPort); err != nil {
+						if err = node.AddPeer(hostPort); err != nil {
 							utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
 						}
 					}
@@ -193,12 +195,12 @@ func run(cliContext *cli.Context) error {
 					populatePeers := concurrent.NewUnboundedExecutor()
 					populatePeers.Go(func(ctx context.Context) {
 						s.LoadPeers(func(address []byte, data []byte) {
-							if err = node.AddPeerSerialized("tcp", data); err != nil {
+							if err = node.AddPeerSerialized(data); err != nil {
 								utils.Ftracef(cliContext.App.Writer, "Failed to load peer data: %v", err)
 							}
 						})
 						for _, hostPort := range strings.Split(defaults.BootstrapNodes, ",") {
-							if err = node.AddPeer("tcp", hostPort); err != nil {
+							if err = node.AddPeer(hostPort); err != nil {
 								utils.Ftracef(cliContext.App.Writer, "Failed to add bootstrap peer %s: %v", hostPort, err)
 							}
 						}
@@ -221,7 +223,7 @@ func run(cliContext *cli.Context) error {
 							select {
 							case peer := <-peerUpdates:
 								//utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
-								node.AddPeer("tcp", fmt.Sprintf("%s:%d", peer.Host, peer.Port))
+								node.AddPeer(fmt.Sprintf("tcp://%s:%d", peer.Host, peer.Port))
 							case <-ctx.Done():
 								return
 							}

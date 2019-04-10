@@ -22,23 +22,12 @@ package pasl
 import (
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/network"
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/utils"
 )
-
-type helloHandler struct {
-	Nonce              []byte
-	GetTopBlock        func() safebox.BlockBase
-	GetPeersByNetwork  func(network string) map[string]*network.Peer
-	GetUserAgentString func() string
-	BlockUpdates       chan<- safebox.SerializedBlockHeader
-	PeerUpdates        chan<- PeerInfo
-}
 
 type PeerInfo struct {
 	Host        string
@@ -53,27 +42,6 @@ type packetHello struct {
 	Block     safebox.SerializedBlockHeader
 	Peers     []PeerInfo
 	UserAgent string
-}
-
-func (this *helloHandler) getTcpPeersList() []PeerInfo {
-	tcpPeers := this.GetPeersByNetwork("tcp")
-	peers := make([]PeerInfo, len(tcpPeers))
-	i := 0
-	for address, peer := range tcpPeers {
-		hostPort := strings.Split(address, ":")
-		port_, err := strconv.Atoi(hostPort[1])
-		port := uint16(port_)
-		if err != nil {
-			port = defaults.P2PPort
-		}
-		peers[i] = PeerInfo{
-			Host:        hostPort[0],
-			Port:        port,
-			LastConnect: peer.LastConnectTimestamp,
-		}
-		i++
-	}
-	return peers
 }
 
 func generateHello(nodePort uint16, nonce []byte, pendingBlock safebox.SerializedBlockHeader, peers map[string]network.Peer, userAgent string) []byte {

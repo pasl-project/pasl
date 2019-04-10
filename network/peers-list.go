@@ -128,12 +128,10 @@ func (this *PeersList) SetDisconnected(peer *Peer) {
 	this.Lock.Lock()
 	defer this.Lock.Unlock()
 
-	if _, exists := this.Forbidden[peer.Address]; exists {
-		return
+	if peer, ok := this.Connected[peer.Address]; ok {
+		this.Queued.Set(peer.Address, peer)
 	}
-
 	delete(this.Connected, peer.Address)
-	this.Queued.Set(peer.Address, peer)
 }
 
 func (this *PeersList) GetAllSeen() map[string]Peer {

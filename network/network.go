@@ -101,7 +101,7 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 				OnStateUpdated: nil,
 			}); err {
 			case ErrLoopbackConnection:
-				peers.Forbid(address)
+				node.peers.Forbid(address)
 			default:
 			}
 		}
@@ -149,7 +149,7 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 						OnStateUpdated: func() { peer.LastSeen = uint64(time.Now().Unix()) },
 					}); err {
 					case ErrLoopbackConnection:
-						peers.Forbid(address)
+						node.peers.Forbid(peer.Address)
 					default:
 					}
 				}(peer)

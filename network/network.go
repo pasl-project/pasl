@@ -122,6 +122,7 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 				wg.Add(1)
 				go func(peer *Peer) {
 					defer wg.Done()
+					defer node.peers.SetDisconnected(peer)
 
 					parsed, err := url.Parse(peer.Address)
 					if err != nil {
@@ -134,8 +135,6 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 						// utils.Tracef("Connection failed: %v", err)
 						return
 					}
-
-					defer node.peers.SetDisconnected(peer)
 
 					address := "tcp://" + conn.RemoteAddr().String()
 					switch err = onNewConnection(ctx, &Connection{

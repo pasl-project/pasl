@@ -573,12 +573,13 @@ func (this *Blockchain) SerializeBlock(block safebox.BlockBase) safebox.Serializ
 
 func (b *Blockchain) GetTopBlock() (safebox.BlockBase, error) {
 	b.lock.RLock()
+	defer b.lock.RUnlock()
+
 	if height := b.GetHeight(); height > 0 {
 		return b.GetBlock(height - 1)
 	}
-	b.lock.RUnlock()
 
-	return b.getPendingBlock(nil, nil, nil, 0)
+	return b.getPendingBlockUnsafe(nil, nil, nil, 0)
 }
 
 func (b *Blockchain) GetTxPool() map[tx.CommonOperation]tx.TxMetadata {
@@ -602,6 +603,10 @@ func (b *Blockchain) getPendingBlock(miner *crypto.Public, payload []byte, times
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 
+	return b.getPendingBlockUnsafe(miner, payload, timestamp, nonce)
+}
+
+func (b *Blockchain) getPendingBlockUnsafe(miner *crypto.Public, payload []byte, timestamp *uint32, nonce uint32) (safebox.BlockBase, error) {
 	var blockTimestamp uint32
 	if timestamp == nil {
 		blockTimestamp = uint32(time.Now().Unix())

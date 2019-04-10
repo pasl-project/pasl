@@ -317,13 +317,13 @@ func (m *Manager) OnNewConnection(ctx context.Context, c *network.Connection) er
 		c.Outgoing,
 		c.OnStateUpdated,
 		func(p *PascalConnection) error {
-			if p.outgoing && bytes.Equal(m.nonce, p.GetNonce()) {
+			if p.outgoing && bytes.Equal(m.nonce, p.GetRemoteNonce()) {
 				return network.ErrLoopbackConnection
 			}
 
 			err := error(nil)
 			m.forEachConnection(func(conn *PascalConnection) {
-				if bytes.Equal(conn.GetNonce(), p.GetNonce()) {
+				if bytes.Equal(conn.GetRemoteNonce(), p.GetRemoteNonce()) {
 					err = network.ErrDuplicateConnection
 				}
 			}, p)

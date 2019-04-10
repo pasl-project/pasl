@@ -48,6 +48,7 @@ type PascalConnection struct {
 	p2pPort        uint16
 	peers          *network.PeersList
 	nonce          []byte
+	remoteNonce    []byte
 	peerUpdates    chan<- PeerInfo
 	onStateUpdate  chan<- *PascalConnection
 	onNewBlock     chan *eventNewBlock
@@ -104,8 +105,8 @@ func (this *PascalConnection) SetState(topBlockIndex uint32, prevSafeboxHash []b
 	this.state = state
 }
 
-func (p *PascalConnection) GetNonce() []byte {
-	return p.nonce
+func (p *PascalConnection) GetRemoteNonce() []byte {
+	return p.remoteNonce
 }
 
 func (this *PascalConnection) GetState() (uint32, []byte) {
@@ -175,7 +176,7 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 	this.SetState(packet.Block.Index, packet.Block.PrevSafeboxHash)
 
 	if atomic.CompareAndSwapUint32(&this.handshakeDone, 0, 1) {
-		this.nonce = packet.Nonce
+		this.remoteNonce = packet.Nonce
 		if err := this.postHandshake(this); err != nil {
 			return err
 		}

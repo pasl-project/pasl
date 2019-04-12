@@ -21,13 +21,16 @@ package pasl
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/modern-go/concurrent"
 	"github.com/pasl-project/pasl/blockchain"
 	"github.com/pasl-project/pasl/defaults"
 	"github.com/pasl-project/pasl/network"
@@ -53,36 +56,56 @@ type PascalConnection struct {
 	postHandshake  func(*PascalConnection) error
 	handshakeDone  uint32
 	outgoing       bool
+	periodic       *concurrent.UnboundedExecutor
 }
 
-func (this *PascalConnection) OnOpen() error {
-	this.underlying.knownOperations[hello] = this.onHelloRequest
-	this.underlying.knownOperations[errorReport] = this.onErrorReport
-	this.underlying.knownOperations[message] = this.onMessageRequest
-	this.underlying.knownOperations[getBlocks] = this.onGetBlocksRequest
-	this.underlying.knownOperations[getHeaders] = this.onGetHeadersRequest
-	this.underlying.knownOperations[newBlock] = this.onNewBlockNotification
-	this.underlying.knownOperations[newOperations] = this.onNewOperationsNotification
+func (p *PascalConnection) OnOpen() error {
+	p.underlying.knownOperations[hello] = p.onHelloRequest
+	p.underlying.knownOperations[errorReport] = p.onErrorReport
+	p.underlying.knownOperations[message] = p.onMessageRequest
+	p.underlying.knownOperations[getBlocks] = p.onGetBlocksRequest
+	p.underlying.knownOperations[getHeaders] = p.onGetHeadersRequest
+	p.underlying.knownOperations[newBlock] = p.onNewBlockNotification
+	p.underlying.knownOperations[newOperations] = p.onNewOperationsNotification
+	p.periodic = concurrent.NewUnboundedExecutor()
 
-	if !this.outgoing {
-		return nil
+	if p.outgoing {
+		p.periodic.Go(p.PeriodicPing)
 	}
 
-	topBlock, err := this.blockchain.GetTopBlock()
-	if err != nil {
-		return err
-	}
-
-	payload := generateHello(this.p2pPort, this.nonce, this.blockchain.SerializeBlockHeader(topBlock, false, false), this.peers.GetAllSeen(), defaults.UserAgent)
-	return this.underlying.sendRequest(hello, payload, this.onHelloCommon)
+	return nil
 }
 
 func (this *PascalConnection) OnData(data []byte) error {
 	return this.underlying.OnData(data)
 }
 
-func (this *PascalConnection) OnClose() {
-	this.closed <- this
+func (p *PascalConnection) OnClose() {
+	p.periodic.StopAndWaitForever()
+	p.closed <- p
+}
+
+func (p *PascalConnection) PeriodicPing(ctx context.Context) {
+	interval := time.Duration(30) * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if topBlock, err := p.blockchain.GetTopBlock(); err == nil {
+			payload := generateHello(p.p2pPort, p.nonce, p.blockchain.SerializeBlockHeader(topBlock, false, false), p.peers.GetAllSeen(), defaults.UserAgent)
+			p.underlying.sendRequest(hello, payload, p.onHelloCommon)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+			break
+		}
+	}
 }
 
 func (p *PascalConnection) GetRemoteNonce() []byte {

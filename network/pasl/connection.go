@@ -36,11 +36,6 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
-type pascalConnectionState struct {
-	topBlockIndex   uint32
-	prevSafeboxHash []byte
-}
-
 type PascalConnection struct {
 	logPrefix      string
 	underlying     *protocol
@@ -50,11 +45,9 @@ type PascalConnection struct {
 	nonce          []byte
 	remoteNonce    []byte
 	peerUpdates    chan<- PeerInfo
-	onStateUpdate  chan<- *PascalConnection
+	onStateUpdate  chan<- eventConnectionState
 	onNewBlock     chan *eventNewBlock
 	onNewOperation chan<- *eventNewOperation
-	state          *pascalConnectionState
-	stateLock      sync.RWMutex
 	closed         chan *PascalConnection
 	onStateUpdated func()
 	postHandshake  func(*PascalConnection) error
@@ -92,27 +85,8 @@ func (this *PascalConnection) OnClose() {
 	this.closed <- this
 }
 
-func (this *PascalConnection) SetState(topBlockIndex uint32, prevSafeboxHash []byte) {
-	this.stateLock.Lock()
-	defer this.stateLock.Unlock()
-	defer func() { this.onStateUpdate <- this }()
-
-	state := &pascalConnectionState{
-		topBlockIndex:   topBlockIndex,
-		prevSafeboxHash: make([]byte, 32),
-	}
-	copy(state.prevSafeboxHash[:32], prevSafeboxHash)
-	this.state = state
-}
-
 func (p *PascalConnection) GetRemoteNonce() []byte {
 	return p.remoteNonce
-}
-
-func (this *PascalConnection) GetState() (uint32, []byte) {
-	this.stateLock.RLock()
-	defer this.stateLock.RUnlock()
-	return this.state.topBlockIndex, this.state.prevSafeboxHash
 }
 
 func (this *PascalConnection) BlocksGet(from, to uint32) []safebox.SerializedBlock {
@@ -173,7 +147,7 @@ func (this *PascalConnection) onHelloCommon(request *requestResponse, payload []
 	}
 
 	utils.Tracef("[P2P %s] Top block %d SafeboxHash %s", this.logPrefix, packet.Block.Index, hex.EncodeToString(packet.Block.PrevSafeboxHash))
-	this.SetState(packet.Block.Index, packet.Block.PrevSafeboxHash)
+	this.onStateUpdate <- eventConnectionState{event{this}, packet.Block.Index}
 
 	if atomic.CompareAndSwapUint32(&this.handshakeDone, 0, 1) {
 		this.remoteNonce = packet.Nonce

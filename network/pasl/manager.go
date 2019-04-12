@@ -51,6 +51,11 @@ type eventNewOperation struct {
 	tx.CommonOperation
 }
 
+type eventConnectionState struct {
+	event
+	topBlockIndex uint32
+}
+
 type syncState int
 
 const (
@@ -68,7 +73,7 @@ type Manager struct {
 	nonce                  []byte
 	onNewBlock             chan *eventNewBlock
 	onNewOperation         chan *eventNewOperation
-	onStateUpdate          chan *PascalConnection
+	onStateUpdate          chan eventConnectionState
 	onSyncState            chan syncState
 	p2pPort                uint16
 	peers                  *network.PeersList
@@ -98,7 +103,7 @@ func WithManager(
 		nonce:          nonce,
 		onNewBlock:     make(chan *eventNewBlock),
 		onNewOperation: make(chan *eventNewOperation),
-		onStateUpdate:  make(chan *PascalConnection),
+		onStateUpdate:  make(chan eventConnectionState),
 		onSyncState:    make(chan syncState),
 		p2pPort:        p2pPort,
 		peers:          peers,
@@ -157,11 +162,10 @@ func WithManager(
 				}
 			case conn := <-manager.closed:
 				manager.initializedConnections.Delete(conn)
-			case conn := <-manager.onStateUpdate:
-				topBlockIndex, _ := conn.GetState()
-				manager.initializedConnections.Store(conn, topBlockIndex)
-				if conn.onStateUpdated != nil {
-					conn.onStateUpdated()
+			case event := <-manager.onStateUpdate:
+				manager.initializedConnections.Store(event.source, event.topBlockIndex)
+				if event.source.onStateUpdated != nil {
+					event.source.onStateUpdated()
 				}
 				signalSync()
 			case state := <-manager.onSyncState:
@@ -238,9 +242,14 @@ func (this *Manager) sync(ctx context.Context) bool {
 
 		selected := rand.Int() % candidatesTotal
 		conn := candidates[selected]
-		topBlockIndex, _ := conn.GetState()
-		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, topBlockIndex)
-		ahead := topBlockIndex + 1 - nodeHeight
+
+		topBlockIndex, ok := this.initializedConnections.Load(conn)
+		if !ok {
+			continue
+		}
+
+		to := utils.MinUint32(nodeHeight+defaults.NetworkBlocksPerRequest-1, topBlockIndex.(uint32))
+		ahead := topBlockIndex.(uint32) + 1 - nodeHeight
 		utils.Tracef("[P2P %s] Fetching blocks %d .. %d (%d blocks ~%d days ahead)", conn.logPrefix, nodeHeight, to, ahead, ahead/288)
 
 		blocks := conn.BlocksGet(nodeHeight, to)

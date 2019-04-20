@@ -64,7 +64,7 @@ func TestSignature(t *testing.T) {
 		if err := ValidateSignature(&tx); err != nil {
 			t.Fatal(err)
 		}
-		_, raw, err = Sign(&tx, key.Convert())
+		_, raw, err = Sign(&tx, key)
 		if err != nil {
 			t.Fatal(err)
 		}

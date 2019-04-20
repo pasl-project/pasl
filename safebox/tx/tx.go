@@ -60,6 +60,7 @@ type CommonOperation interface {
 	getBufferToSign() []byte
 	getSignature() *crypto.SignatureSerialized
 	getSourceInfo() (number uint32, operationId uint32, publicKey *crypto.Public)
+	setPublic(publicKey *crypto.Public)
 	validate(getAccount func(number uint32) *accounter.Account) (context interface{}, err error)
 }
 
@@ -79,7 +80,10 @@ type OperationsNetwork struct {
 	Operations []CommonOperation
 }
 
-func Sign(tx CommonOperation, priv *ecdsa.PrivateKey) (txID string, raw []byte, err error) {
+func Sign(tx CommonOperation, private *crypto.Key) (txID string, raw []byte, err error) {
+	tx.setPublic(private.Public)
+	priv := private.Convert()
+
 	_, _, public := tx.getSourceInfo()
 	public.Curve = priv.Curve
 	public.X = big.NewInt(0).Set(priv.PublicKey.X)

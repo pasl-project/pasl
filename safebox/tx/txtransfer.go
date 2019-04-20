@@ -140,3 +140,7 @@ func (this *Transfer) getSignature() *crypto.SignatureSerialized {
 func (this *Transfer) GetType() txType {
 	return txTypeTransfer
 }
+
+func (t *Transfer) setPublic(public *crypto.Public) {
+	t.PublicKey = public.Copy()
+}

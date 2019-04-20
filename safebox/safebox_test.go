@@ -111,9 +111,8 @@ func Test(t *testing.T) {
 			Amount:      3,
 			Fee:         4,
 			Payload:     nil,
-			PublicKey:   *miner.Public,
 		}
-		_, _, err = tx.Sign(&transaction, miner.Convert())
+		_, _, err = tx.Sign(&transaction, miner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,14 +144,13 @@ func Test(t *testing.T) {
 			Amount:      amount,
 			Fee:         fee,
 			Payload:     nil,
-			PublicKey:   *miner.Public,
 		}
 
 		randomKey, err := crypto.NewKeyByType(crypto.NIDsecp256k1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = tx.Sign(&transaction, randomKey.Convert())
+		_, _, err = tx.Sign(&transaction, randomKey)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +166,7 @@ func Test(t *testing.T) {
 			t.FailNow()
 		}
 
-		_, _, err = tx.Sign(&transaction, miner.Convert())
+		_, _, err = tx.Sign(&transaction, miner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,9 +224,8 @@ func TestValidation(t *testing.T) {
 			Amount:      3,
 			Fee:         4,
 			Payload:     nil,
-			PublicKey:   *miner.Public,
 		}
-		_, _, err = tx.Sign(&transaction, miner.Convert())
+		_, _, err = tx.Sign(&transaction, miner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +245,6 @@ func TestValidation(t *testing.T) {
 	// 	OperationId:  1,
 	// 	Fee:          2,
 	// 	Payload:      nil,
-	// 	PublicKey:    *miner.Public,
 	// 	NewPublickey: serializedPublic.Bytes(),
 	// }
 	// _, _, err = tx.Sign(&transaction, miner.Convert())

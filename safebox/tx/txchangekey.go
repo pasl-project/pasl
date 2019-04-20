@@ -135,3 +135,7 @@ func (this *ChangeKey) getSourceInfo() (number uint32, operationId uint32, publi
 func (this *ChangeKey) GetType() txType {
 	return txTypeChangekey
 }
+
+func (c *ChangeKey) setPublic(public *crypto.Public) {
+	c.PublicKey = public.Copy()
+}

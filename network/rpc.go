@@ -9,9 +9,10 @@ import (
 	"net"
 	"net/http"
 
-	"bitbucket.org/creachadair/jrpc2"
-	"bitbucket.org/creachadair/jrpc2/channel"
-	"bitbucket.org/creachadair/jrpc2/server"
+	"github.com/creachadair/jrpc2"
+	"github.com/creachadair/jrpc2/channel"
+	"github.com/creachadair/jrpc2/handler"
+	"github.com/creachadair/jrpc2/server"
 	"github.com/modern-go/concurrent"
 )
 
@@ -56,9 +57,9 @@ func WithRpcServer(hostPort string, handlers map[string]interface{}, callback fu
 	rpcServer := concurrent.NewUnboundedExecutor()
 	rpcServer.Go(func(ctx context.Context) {
 
-		assigner := jrpc2.MapAssigner{}
+		assigner := handler.Map{}
 		for each := range handlers {
-			assigner[each] = jrpc2.NewHandler(handlers[each])
+			assigner[each] = handler.New(handlers[each])
 		}
 
 		headers := http.Header{}

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -41,6 +42,7 @@ import (
 	"github.com/pasl-project/pasl/safebox"
 	"github.com/pasl-project/pasl/storage"
 	"github.com/pasl-project/pasl/utils"
+	"github.com/pasl-project/pasl/wallet"
 )
 
 func exportMain(ctx *cli.Context) error {
@@ -111,7 +113,7 @@ var p2pPortFlag = cli.UintFlag{
 	Usage: "P2P bind port",
 	Value: uint(defaults.P2PPort),
 }
-var rpcIpFlag = cli.StringFlag{
+var rpcIPFlag = cli.StringFlag{
 	Name:  "rpc-bind-ip",
 	Usage: "RPC bind ip",
 	Value: defaults.RPCBindHost,
@@ -123,6 +125,44 @@ var dataDirFlag = cli.StringFlag{
 var exclusiveNodesFlag = cli.StringFlag{
 	Name:  "exclusive-nodes",
 	Usage: "Comma-separated ip:port list of exclusive nodes to connect to",
+}
+var walletFileFlag = cli.StringFlag{
+	Name:  "wallet-file",
+	Usage: "File to store encrypted wallet keys",
+	Value: "wallet.json",
+}
+var passwordFlag = cli.StringFlag{
+	Name:  "password",
+	Usage: "Password to decrypt wallet keys",
+	Value: "",
+}
+func initWallet(ctx *cli.Context, coreRPCAddress string) (*wallet.Wallet, error) {
+	filename := ctx.GlobalString(walletFileFlag.GetName())
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open wallet file '%v': %v", filename, err)
+	}
+
+	contents, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	set := func(contents []byte) error {
+		if err := file.Truncate(0); err != nil {
+			return err
+		}
+		written, err := file.WriteAt(contents, 0)
+		if err != nil {
+			return err
+		}
+		if written != len(contents) {
+			return fmt.Errorf("incomplete write")
+		}
+		return nil
+	}
+
+	return wallet.NewWallet(contents, []byte(ctx.GlobalString(passwordFlag.GetName())), set, coreRPCAddress)
 }
 
 func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain, storage storage.Storage) error) error {
@@ -184,6 +224,14 @@ func run(cliContext *cli.Context) error {
 		peerUpdates := make(chan pasl.PeerInfo)
 		return pasl.WithManager(nonce, blockchain, p2pPort, peers, peerUpdates, blockchain.BlocksUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager *pasl.Manager) error {
 			return network.WithNode(config, peers, manager.OnNewConnection, func(node network.Node) error {
+				coreRPC := api.NewApi(blockchain)
+				RPCBindAddress := fmt.Sprintf("%s:%d", cliContext.GlobalString(rpcIPFlag.GetName()), defaults.RPCPort)
+
+				wallet, err := initWallet(cliContext, RPCBindAddress)
+				if err != nil {
+					return fmt.Errorf("failed to initialize wallet: %v", err)
+				}
+				defer wallet.Close()
 
 				if cliContext.IsSet(exclusiveNodesFlag.GetName()) {
 					for _, hostPort := range strings.Split(cliContext.String(exclusiveNodesFlag.GetName()), ",") {
@@ -232,9 +280,10 @@ func run(cliContext *cli.Context) error {
 					defer updatesListener.StopAndWaitForever()
 				}
 
-				coreRPC := api.NewApi(blockchain)
-				RPCBindAddress := fmt.Sprintf("%s:%d", cliContext.GlobalString(rpcIpFlag.GetName()), defaults.RPCPort)
 				RPCHandlers := coreRPC.GetHandlers()
+				for k, v := range wallet.GetHandlers() {
+					RPCHandlers[k] = v
+				}
 				return network.WithRpcServer(RPCBindAddress, RPCHandlers, func() error {
 					c := make(chan os.Signal, 1)
 					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -261,7 +310,10 @@ func main() {
 		exclusiveNodesFlag,
 		heightFlag,
 		p2pPortFlag,
-		rpcIpFlag,
+		rpcIPFlag,
+
+		walletFileFlag,
+		passwordFlag,
 	}
 	app.CommandNotFound = func(c *cli.Context, command string) {
 		cli.ShowAppHelp(c)

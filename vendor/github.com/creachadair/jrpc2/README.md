@@ -5,7 +5,7 @@ http://godoc.org/github.com/creachadair/jrpc2
 [![Go Report Card](https://goreportcard.com/badge/github.com/creachadair/jrpc2)](https://goreportcard.com/report/github.com/creachadair/jrpc2)
 
 This repository provides Go package that implements a [JSON-RPC 2.0][spec] client and server.
-There is also a working [example in the Go playground](https://play.golang.org/p/tS7qOTSJ9wV).  
+There is also a working [example in the Go playground](https://play.golang.org/p/idEcyqBcAZR).
 
 ## Packages
 
@@ -18,6 +18,8 @@ There is also a working [example in the Go playground](https://play.golang.org/p
 *  Package [handler](http://godoc.org/github.com/creachadair/jrpc2/handler) defines support for adapting functions to service methods.
 
 *  Package [jctx](http://godoc.org/github.com/creachadair/jrpc2/jctx) implements an encoder and decoder for request context values, allowing context metadata to be propagated through JSON-RPC requests.
+
+*  Package [jhttp](http://godoc.org/github.com/creachadair/jrpc2/jhttp) allows clients and servers to use HTTP as a transport.
 
 *  Package [metrics](http://godoc.org/github.com/creachadair/jrpc2/metrics) defines a server metrics collector.
 

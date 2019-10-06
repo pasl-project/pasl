@@ -3,7 +3,7 @@ clone_folder: c:\gopath\src\github.com\pasl-project/pasl
 environment:
   GOPATH: c:\gopath
 
-stack: go 1.10
+stack: go 1.13
 
 install:
   - go get golang.org/x/tools/cmd/cover

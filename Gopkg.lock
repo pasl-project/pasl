@@ -2,55 +2,42 @@
 
 
 [[projects]]
-  digest = "1:23cfa40250e577a38756c31f9669175b3481f31be53d7703e4d292f5ae78196a"
   name = "bitbucket.org/creachadair/stringset"
   packages = ["."]
-  pruneopts = "UT"
-  revision = "f00feb9f89a58c9610381310efb048d121923a81"
-  version = "v0.0.3"
+  revision = "7c6678a70f6812a0abfb9d71d21d74ee24af01f9"
+  version = "v0.0.8"
 
 [[projects]]
   branch = "master"
-  digest = "1:370e346224764417ccb889946f5e0f1b13a65e7ac4a31ebd85f18cff9586c576"
   name = "github.com/akamensky/base58"
   packages = ["."]
-  pruneopts = "UT"
   revision = "92b0f56f531ac8c9d3087f33a4bcd5bca9cd5fb7"
 
 [[projects]]
-  digest = "1:0f98f59e9a2f4070d66f0c9c39561f68fcd1dc837b22a852d28d0003aebd1b1e"
   name = "github.com/boltdb/bolt"
   packages = ["."]
-  pruneopts = "UT"
   revision = "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
   version = "v1.3.1"
 
 [[projects]]
   branch = "master"
-  digest = "1:f5a785a2836dce1d5a46a313275fe868c332090a3709b5aa58b84e1368ae006f"
   name = "github.com/btcsuite/fastsha256"
   packages = ["."]
-  pruneopts = "UT"
   revision = "637e656429416087660c84436a2a035d69d54e2e"
 
 [[projects]]
   branch = "master"
-  digest = "1:82bf896f8e40122403a592707e4215adae704a2d24b2a8a809b5fbb2fe8f031e"
   name = "github.com/cevaris/ordered_map"
   packages = ["."]
-  pruneopts = "UT"
-  revision = "01ce2b16ad4f7522692d9af8337722216a1038bb"
+  revision = "3adeae072e730f1919a936e13b4923706d3f60fe"
 
 [[projects]]
   branch = "master"
-  digest = "1:fa8be278c9e78fc010a33500c3cc0685d0b725d657dce17805a99ba45a549280"
   name = "github.com/coin-network/curve"
   packages = ["."]
-  pruneopts = "UT"
   revision = "db76e7a38345557ce3256bb78c6efc49cb87a33a"
 
 [[projects]]
-  digest = "1:7b69f3b29200be2debcdb16d1ff197b6ee51fff551657508698338d85b0ab632"
   name = "github.com/creachadair/jrpc2"
   packages = [
     ".",
@@ -58,114 +45,68 @@
     "code",
     "handler",
     "metrics",
-    "server",
+    "server"
   ]
-  pruneopts = "UT"
-  revision = "b03c245eba1a8794c7bfe3c5a140a09ab9f5e3f0"
-  version = "v0.1.0"
+  revision = "87dc03c18c7dd58f934eb2c2072d610c2e4f2c8d"
+  version = "v0.4.4"
 
 [[projects]]
   branch = "master"
-  digest = "1:e37a139a6e62dbe03225ff69baaadb39ed85f5ef5b1dcbb6c2e7650448320dbb"
   name = "github.com/cs8425/go-ecdh"
   packages = ["."]
-  pruneopts = "UT"
   revision = "f1cb5c0e415f8979192bbe4fd85d063add32d899"
 
 [[projects]]
-  digest = "1:a89a8f5f5f58d1b4a1fd212337a7abb17b8f303a3401c4d28384a42d4cfe741e"
   name = "github.com/fd/eccp"
   packages = ["."]
-  pruneopts = "UT"
   revision = "2a13f4315491bf6ad64374f3b98a2cba67f3941a"
   version = "v1.0.0"
 
 [[projects]]
   branch = "master"
-  digest = "1:e1bf2286080381841133a670654c875d61b3d3749c1b408ebcc9c8501da5cff9"
   name = "github.com/mantyr/iterator"
   packages = ["."]
-  pruneopts = "UT"
   revision = "c4cf40066bc4f89fb6811f1e7a8239d193c90c11"
 
 [[projects]]
-  digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
   name = "github.com/modern-go/concurrent"
   packages = ["."]
-  pruneopts = "UT"
   revision = "bacd9c7ef1dd9b15be4a9909b8ac7a4e313eec94"
   version = "1.0.3"
 
 [[projects]]
-  digest = "1:b24d38b282bacf9791408a080f606370efa3d364e4b5fd9ba0f7b87786d3b679"
   name = "github.com/urfave/cli"
   packages = ["."]
-  pruneopts = "UT"
-  revision = "cfb38830724cc34fedffe9a2a29fb54fa9169cd1"
-  version = "v1.20.0"
+  revision = "bfe2e925cfb6d44b40ad3a779165ea7e8aff9212"
+  version = "v1.22.0"
 
 [[projects]]
   branch = "master"
-  digest = "1:f22ab31c2b89486fe3c846a5ad8b9e01d000c6dd427ca38585e03a2e9ffad021"
   name = "github.com/xiphon/ellipticbinary"
   packages = ["."]
-  pruneopts = "UT"
   revision = "be7a5187429f7e561bb864375fdd8c231cf6765a"
 
 [[projects]]
   branch = "master"
-  digest = "1:ba978f6245b7c9ebc1b05f48085f4e21ce3b99fba9ad2c620bdb9605f3ec23f9"
   name = "golang.org/x/crypto"
   packages = ["ripemd160"]
-  pruneopts = "UT"
-  revision = "9de5f2eaf759b4c4550b3db39fed2e9e5f86f45c"
+  revision = "34f69633bfdcf9db92f698f8487115767eebef81"
 
 [[projects]]
   branch = "master"
-  digest = "1:5e4d81c50cffcb124b899e4f3eabec3930c73532f0096c27f94476728ba03028"
   name = "golang.org/x/sync"
   packages = ["semaphore"]
-  pruneopts = "UT"
-  revision = "42b317875d0fa942474b76e1b46a6060d720ae6e"
+  revision = "cd5d95a43a6e21273425c7ae415d3df9ea832eeb"
 
 [[projects]]
   branch = "master"
-  digest = "1:ba7d5e85e8b4f084fae02a1a9d7462980e889d1eb689c747507b30a30b8bfa67"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  pruneopts = "UT"
-  revision = "37707fdb30a5b38865cfb95e5aab41707daec7fd"
-
-[[projects]]
-  branch = "master"
-  digest = "1:c44a77760372a998be8d4656e8d3c865f68735ec4cad1743a245903a58f64249"
-  name = "golang.org/x/xerrors"
-  packages = [
-    ".",
-    "internal",
-  ]
-  pruneopts = "UT"
-  revision = "3ee3066db522c6628d440a3a91c4abdd7f5ef22f"
+  revision = "aed5e4c7ecf9f069775e08834fb724544628d38d"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  input-imports = [
-    "github.com/akamensky/base58",
-    "github.com/boltdb/bolt",
-    "github.com/cevaris/ordered_map",
-    "github.com/coin-network/curve",
-    "github.com/creachadair/jrpc2",
-    "github.com/creachadair/jrpc2/channel",
-    "github.com/creachadair/jrpc2/handler",
-    "github.com/creachadair/jrpc2/server",
-    "github.com/cs8425/go-ecdh",
-    "github.com/fd/eccp",
-    "github.com/mantyr/iterator",
-    "github.com/modern-go/concurrent",
-    "github.com/urfave/cli",
-    "github.com/xiphon/ellipticbinary",
-    "golang.org/x/crypto/ripemd160",
-  ]
+  inputs-digest = "792f5b75cd4fff6335f2a8b36d45b1a95b40f7d0283aa665f2a48bcd95d6cca9"
   solver-name = "gps-cdcl"
   solver-version = 1

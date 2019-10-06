@@ -129,7 +129,7 @@ var exclusiveNodesFlag = cli.StringFlag{
 var walletFileFlag = cli.StringFlag{
 	Name:  "wallet-file",
 	Usage: "File to store encrypted wallet keys",
-	Value: "wallet.json",
+	Value: "",
 }
 var passwordFlag = cli.StringFlag{
 	Name:  "password",
@@ -137,7 +137,15 @@ var passwordFlag = cli.StringFlag{
 	Value: "",
 }
 func initWallet(ctx *cli.Context, coreRPCAddress string) (*wallet.Wallet, error) {
+	dataDir, err := getDataDir(ctx, false)
+	if err != nil {
+		return nil, err
+	}
 	filename := ctx.GlobalString(walletFileFlag.GetName())
+	if filename == "" {
+		filename = filepath.Join(dataDir, "wallet.json")
+	}
+
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open wallet file '%v': %v", filename, err)
@@ -165,20 +173,32 @@ func initWallet(ctx *cli.Context, coreRPCAddress string) (*wallet.Wallet, error)
 	return wallet.NewWallet(contents, []byte(ctx.GlobalString(passwordFlag.GetName())), set, coreRPCAddress)
 }
 
-func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain, storage storage.Storage) error) error {
+func getDataDir(ctx *cli.Context, create bool) (string, error) {
 	dataDir := ctx.GlobalString(dataDirFlag.GetName())
 	if dataDir == "" {
 		var err error
 		if dataDir, err = utils.GetDataDir(); err != nil {
-			return fmt.Errorf("Failed to obtain valid data directory path. Use %s flag to manually specify data directory location. Error: %v", dataDirFlag.GetName(), err)
+			return "", fmt.Errorf("Failed to obtain valid data directory path. Use %s flag to manually specify data directory location. Error: %v", dataDirFlag.GetName(), err)
 		}
 	}
 
-	if err := utils.CreateDirectory(&dataDir); err != nil {
-		return fmt.Errorf("Failed to create data directory %v", err)
+	if create {
+		if err := utils.CreateDirectory(&dataDir); err != nil {
+			return "", fmt.Errorf("Failed to create data directory %v", err)
+		}
 	}
+
+	return dataDir, nil
+}
+
+func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain, storage storage.Storage) error) error {
+	dataDir, err := getDataDir(ctx, true)
+	if err != nil {
+		return err
+	}
+
 	dbFileName := filepath.Join(dataDir, "storage.db")
-	err := storage.WithStorage(&dbFileName, func(storage storage.Storage) (err error) {
+	err = storage.WithStorage(&dbFileName, func(storage storage.Storage) (err error) {
 		var blockchainInstance *blockchain.Blockchain
 		if ctx.IsSet(heightFlag.GetName()) {
 			var height uint32

@@ -96,7 +96,7 @@ func (this *Api) GetAccount(_ context.Context, params *struct{ Account uint32 })
 func txToNetwork(meta *tx.TxMetadata, transaction tx.CommonOperation) network.Operation {
 	return network.Operation{
 		Account:        transaction.GetAccount(),
-		Amount:         float64(transaction.GetAmount()) / -10000,
+		Amount:         float64(transaction.GetAmount()) / 10000,
 		Block:          meta.BlockIndex,
 		Dest_account:   transaction.GetDestAccount(),
 		Fee:            float64(transaction.GetFee()) / 10000,

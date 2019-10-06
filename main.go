@@ -24,11 +24,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/modern-go/concurrent"
 	"github.com/urfave/cli"
@@ -136,6 +140,7 @@ var passwordFlag = cli.StringFlag{
 	Usage: "Password to decrypt wallet keys",
 	Value: "",
 }
+
 func initWallet(ctx *cli.Context, coreRPCAddress string) (*wallet.Wallet, error) {
 	dataDir, err := getDataDir(ctx, false)
 	if err != nil {
@@ -218,6 +223,15 @@ func withBlockchain(ctx *cli.Context, fn func(blockchain *blockchain.Blockchain,
 	return nil
 }
 
+type SignalCancel struct{}
+
+func (SignalCancel) String() string {
+	return "Cancal"
+}
+
+func (SignalCancel) Signal() {
+}
+
 func run(cliContext *cli.Context) error {
 	utils.Ftracef(cliContext.App.Writer, defaults.UserAgent)
 
@@ -244,6 +258,7 @@ func run(cliContext *cli.Context) error {
 		peerUpdates := make(chan pasl.PeerInfo)
 		return pasl.WithManager(nonce, blockchain, p2pPort, peers, peerUpdates, blockchain.BlocksUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager *pasl.Manager) error {
 			return network.WithNode(config, peers, manager.OnNewConnection, func(node network.Node) error {
+				cancel := make(chan os.Signal, 2)
 				coreRPC := api.NewApi(blockchain)
 				RPCBindAddress := fmt.Sprintf("%s:%d", cliContext.GlobalString(rpcIPFlag.GetName()), defaults.RPCPort)
 
@@ -252,6 +267,18 @@ func run(cliContext *cli.Context) error {
 					return fmt.Errorf("failed to initialize wallet: %v", err)
 				}
 				defer wallet.Close()
+				ln, err := net.Listen("tcp", "127.0.0.1:8100")
+				if err != nil {
+					return fmt.Errorf("failed to bind Web UI port: %v", err)
+				}
+				defer ln.Close()
+				go func() {
+					utils.Ftracef(cliContext.App.Writer, fmt.Sprintf("Web UI is available at http://%s", ln.Addr().String()))
+					mux := http.NewServeMux()
+					mux.Handle("/", http.FileServer(AssetFile()))
+					// TODO: handle error
+					http.Serve(ln, mux)
+				}()
 
 				if cliContext.IsSet(exclusiveNodesFlag.GetName()) {
 					for _, hostPort := range strings.Split(cliContext.String(exclusiveNodesFlag.GetName()), ",") {
@@ -305,9 +332,8 @@ func run(cliContext *cli.Context) error {
 					RPCHandlers[k] = v
 				}
 				return network.WithRpcServer(RPCBindAddress, RPCHandlers, func() error {
-					c := make(chan os.Signal, 1)
-					signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-					<-c
+					signal.Notify(cancel, os.Interrupt, syscall.SIGTERM)
+					<-cancel
 					utils.Ftracef(cliContext.App.Writer, "Exit signal received. Terminating...")
 					return nil
 				})
@@ -317,6 +343,7 @@ func run(cliContext *cli.Context) error {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	app := cli.NewApp()
 	app.Usage = "PASL command line interface"
 	app.Version = defaults.UserAgent

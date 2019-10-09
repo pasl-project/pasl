@@ -135,11 +135,11 @@ func (w *Wallet) getPublic() (p *Public, err error) {
 	return p, err
 }
 
-func (w *Wallet) GetWalletPubKey(context.Context) (*Public, error) {
+func (w *Wallet) GetWalletPubKey(context.Context, *struct{}) (*Public, error) {
 	return w.getPublic()
 }
 
-func (w *Wallet) GetWalletPubKeys(context.Context) ([]*Public, error) {
+func (w *Wallet) GetWalletPubKeys(context.Context, *struct{}) ([]*Public, error) {
 	p, err := w.getPublic()
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (w *Wallet) getAccount(number uint32) (*network.Account, error) {
 	return &account, nil
 }
 
-func (w *Wallet) GetPrivateKeyEncrypted(context.Context) (encryptedHex string, err error) {
+func (w *Wallet) GetPrivateKeyEncrypted(context.Context, *struct{}) (encryptedHex string, err error) {
 	return w.key.GetEncryptedHex(), nil
 }
 
@@ -220,7 +220,7 @@ func (w *Wallet) CreateWallet(_ context.Context, params *struct {
 	return true, nil
 }
 
-func (w *Wallet) GetWalletAccounts(context.Context) ([]Account, error) {
+func (w *Wallet) GetWalletAccounts(context.Context, *struct{}) ([]Account, error) {
 	accounts, err := w.getWalletAccountNumbers()
 	if err != nil {
 		return nil, err
@@ -243,7 +243,7 @@ func (w *Wallet) GetWalletAccounts(context.Context) ([]Account, error) {
 	return result, nil
 }
 
-func (w *Wallet) GetWalletAccountsCount(context.Context) (uint, error) {
+func (w *Wallet) GetWalletAccountsCount(context.Context, *struct{}) (uint, error) {
 	accounts, err := w.getWalletAccountNumbers()
 	if err != nil {
 		return 0, err

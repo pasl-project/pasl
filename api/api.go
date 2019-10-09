@@ -43,7 +43,7 @@ func (a *Api) GetHandlers() map[string]interface{} {
 	}
 }
 
-func (this *Api) GetBlockCount(context.Context) (int, error) {
+func (this *Api) GetBlockCount(context.Context, *struct{}) (int, error) {
 	height := this.blockchain.GetHeight()
 	return int(height), nil
 }
@@ -110,7 +110,7 @@ func txToNetwork(meta *tx.TxMetadata, transaction tx.CommonOperation) network.Op
 	}
 }
 
-func (this *Api) GetPending(_ context.Context) ([]network.Operation, error) {
+func (this *Api) GetPending(context.Context, *struct{}) ([]network.Operation, error) {
 	response := make([]network.Operation, 0)
 
 	for tx, meta := range this.blockchain.GetTxPool() {

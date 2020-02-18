@@ -33,6 +33,10 @@ type packetGetBlocksResponse struct {
 	Blocks []safebox.SerializedBlock
 }
 
+type packetGetHeadersResponse struct {
+	BlockHeaders []safebox.SerializedBlockHeader
+}
+
 type packetError struct {
 	Message string
 }

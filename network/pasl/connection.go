@@ -255,7 +255,38 @@ func (this *PascalConnection) onMessageRequest(request *requestResponse, payload
 
 func (this *PascalConnection) onGetHeadersRequest(request *requestResponse, payload []byte) ([]byte, error) {
 	utils.Tracef("[P2P %s] %s", this.logPrefix, request.GetType())
-	return nil, nil
+
+	var packet packetGetBlocksRequest
+	if err := utils.Deserialize(&packet, bytes.NewBuffer(payload)); err != nil {
+		return nil, err
+	}
+
+	if packet.FromIndex > packet.ToIndex {
+		packet.ToIndex, packet.FromIndex = packet.FromIndex, packet.ToIndex
+	}
+
+	total := packet.ToIndex - packet.FromIndex
+	if total > defaults.NetworkBlocksPerRequest {
+		total = defaults.NetworkBlocksPerRequest
+		packet.ToIndex = packet.FromIndex + total
+	}
+
+	serialized := make([]safebox.SerializedBlockHeader, 0, total)
+	for index := packet.FromIndex; index <= packet.ToIndex; index++ {
+		if block, err := this.blockchain.GetBlock(index); err == nil {
+			serialized = append(serialized, this.blockchain.SerializeBlockHeader(block, false, false))
+		} else {
+			utils.Tracef("[P2P %s] Failed to get block header %d: %v", this.logPrefix, index, err)
+			break
+		}
+	}
+
+	out := utils.Serialize(packetGetHeadersResponse{
+		BlockHeaders: serialized,
+	})
+	request.result.setError(success)
+
+	return out, nil
 }
 
 func (this *PascalConnection) onNewBlockNotification(request *requestResponse, payload []byte) ([]byte, error) {

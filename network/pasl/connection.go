@@ -47,7 +47,7 @@ type PascalConnection struct {
 	peers          *network.PeersList
 	nonce          []byte
 	remoteNonce    []byte
-	peerUpdates    chan<- PeerInfo
+	peerUpdates    chan<- network.PeerInfo
 	onStateUpdate  chan<- eventConnectionState
 	onNewBlock     chan *eventNewBlock
 	onNewOperation chan<- *eventNewOperation

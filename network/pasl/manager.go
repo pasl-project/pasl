@@ -77,7 +77,7 @@ type Manager struct {
 	onSyncState            chan syncState
 	p2pPort                uint16
 	peers                  *network.PeersList
-	peerUpdates            chan<- PeerInfo
+	peerUpdates            chan<- network.PeerInfo
 	prevSyncState          syncState
 	timeoutRequest         time.Duration
 	txPoolUpdates          <-chan tx.CommonOperation
@@ -89,7 +89,7 @@ func WithManager(
 	blockchain *blockchain.Blockchain,
 	p2pPort uint16,
 	peers *network.PeersList,
-	peerUpdates chan<- PeerInfo,
+	peerUpdates chan<- network.PeerInfo,
 	blocksUpdates <-chan safebox.SerializedBlock,
 	txPoolUpdates <-chan tx.CommonOperation,
 	timeoutRequest time.Duration,

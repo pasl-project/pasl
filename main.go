@@ -255,9 +255,9 @@ func run(cliContext *cli.Context) error {
 		nonce := utils.Serialize(key.Public)
 
 		peers := network.NewPeersList()
-		peerUpdates := make(chan pasl.PeerInfo)
+		peerUpdates := make(chan network.PeerInfo)
 		return pasl.WithManager(nonce, blockchain, p2pPort, peers, peerUpdates, blockchain.BlocksUpdates, blockchain.TxPoolUpdates, defaults.TimeoutRequest, func(manager *pasl.Manager) error {
-			return network.WithNode(config, peers, manager.OnNewConnection, func(node network.Node) error {
+			return network.WithNode(config, peers, peerUpdates, manager.OnNewConnection, func(node network.Node) error {
 				cancel := make(chan os.Signal, 2)
 				coreRPC := api.NewApi(blockchain)
 				RPCBindAddress := fmt.Sprintf("%s:%d", cliContext.GlobalString(rpcIPFlag.GetName()), defaults.RPCPort)
@@ -311,20 +311,6 @@ func run(cliContext *cli.Context) error {
 							})
 						})
 					}()
-
-					updatesListener := concurrent.NewUnboundedExecutor()
-					updatesListener.Go(func(ctx context.Context) {
-						for {
-							select {
-							case peer := <-peerUpdates:
-								//utils.Ftracef(cliContext.App.Writer, "   %s:%d last seen %s ago", peer.Host, peer.Port, time.Since(time.Unix(int64(peer.LastConnect), 0)))
-								node.AddPeer(fmt.Sprintf("tcp://%s:%d", peer.Host, peer.Port))
-							case <-ctx.Done():
-								return
-							}
-						}
-					})
-					defer updatesListener.StopAndWaitForever()
 				}
 
 				RPCHandlers := coreRPC.GetHandlers()

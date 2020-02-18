@@ -64,7 +64,13 @@ type Connection struct {
 	OnStateUpdated func()
 }
 
-func WithNode(config Config, peers *PeersList, onNewConnection func(context.Context, *Connection) error, fn func(node Node) error) error {
+type PeerInfo struct {
+	Host        string
+	Port        uint16
+	LastConnect uint32
+}
+
+func WithNode(config Config, peers *PeersList, peerUpdates <-chan PeerInfo, onNewConnection func(context.Context, *Connection) error, fn func(node Node) error) error {
 	node := Node{
 		config: config,
 		peers:  peers,
@@ -152,6 +158,19 @@ func WithNode(config Config, peers *PeersList, onNewConnection func(context.Cont
 		}
 	})
 	defer scheduler.StopAndWaitForever()
+
+	updatesListener := concurrent.NewUnboundedExecutor()
+	updatesListener.Go(func(ctx context.Context) {
+		for {
+			select {
+			case peer := <-peerUpdates:
+				node.AddPeer(fmt.Sprintf("tcp://%s:%d", peer.Host, peer.Port))
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
+	defer updatesListener.StopAndWaitForever()
 
 	return fn(node)
 }

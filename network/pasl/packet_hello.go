@@ -29,23 +29,17 @@ import (
 	"github.com/pasl-project/pasl/utils"
 )
 
-type PeerInfo struct {
-	Host        string
-	Port        uint16
-	LastConnect uint32
-}
-
 type packetHello struct {
 	NodePort  uint16
 	Nonce     []byte
 	Time      uint32
 	Block     safebox.SerializedBlockHeader
-	Peers     []PeerInfo
+	Peers     []network.PeerInfo
 	UserAgent string
 }
 
 func generateHello(nodePort uint16, nonce []byte, pendingBlock safebox.SerializedBlockHeader, peers map[string]network.Peer, userAgent string) []byte {
-	whitePeers := make([]PeerInfo, 0, len(peers))
+	whitePeers := make([]network.PeerInfo, 0, len(peers))
 	for address := range peers {
 		parsed, err := url.Parse(address)
 		if err != nil {
@@ -55,7 +49,7 @@ func generateHello(nodePort uint16, nonce []byte, pendingBlock safebox.Serialize
 		if err != nil {
 			continue
 		}
-		whitePeers = append(whitePeers, PeerInfo{
+		whitePeers = append(whitePeers, network.PeerInfo{
 			Host:        parsed.Hostname(),
 			Port:        uint16(port),
 			LastConnect: peers[address].LastConnectTimestamp,

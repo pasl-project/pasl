@@ -191,7 +191,10 @@ func (this *Accounter) GetCumulativeDifficultyAndTimestamp(index uint32) (*big.I
 
 func (this *Accounter) getAccountUnsafe(number uint32) *Account {
 	offset := number % defaults.AccountsPerBlock
-	return this.getPackContainingAccountUnsafe(number).GetAccount(int(offset))
+	if pack := this.getPackContainingAccountUnsafe(number); pack != nil {
+		return pack.GetAccount(int(offset))
+	}
+	return nil
 }
 
 func (this *Accounter) GetAccount(number uint32) *Account {

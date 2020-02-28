@@ -192,9 +192,14 @@ func (b *Blockchain) addBlock(target common.TargetBase, block safebox.BlockBase)
 		return nil, nil, ErrParentNotFound
 	}
 
-	lastTimestamps := b.safebox.GetLastTimestamps(1)
-	if len(lastTimestamps) != 0 && block.GetTimestamp() < lastTimestamps[0] {
-		return nil, nil, errors.New("Invalid timestamp")
+	if block.GetIndex() > 0 {
+		lastTimestamps := b.safebox.GetLastTimestamps(1)
+		if len(lastTimestamps) == 0 {
+			return nil, nil, errors.New("Failed to get recent blocks timestamps")
+		}
+		if block.GetTimestamp() < lastTimestamps[0] {
+			return nil, nil, errors.New("Invalid timestamp")
+		}
 	}
 	if err := b.safebox.GetFork().CheckBlock(target, block); err != nil {
 		return nil, nil, errors.New("Invalid block: " + err.Error())

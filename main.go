@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -30,6 +31,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -89,6 +91,24 @@ func getMain(ctx *cli.Context) error {
 	return cli.ShowSubcommandHelp(ctx)
 }
 
+func getBlock(ctx *cli.Context) error {
+	if !ctx.Args().Present() {
+		return errors.New("invalid block index")
+	}
+	return withBlockchain(ctx, func(_ *blockchain.Blockchain, s storage.Storage) error {
+		index, err := strconv.ParseUint(ctx.Args().First(), 10, 32)
+		if err != nil {
+			return err
+		}
+		data, err := s.GetBlock(uint32(index))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(ctx.App.Writer, "%x\n", data)
+		return nil
+	})
+}
+
 func getHeight(ctx *cli.Context) error {
 	return withBlockchain(ctx, func(blockchain *blockchain.Blockchain, _ storage.Storage) error {
 		height := blockchain.GetHeight()
@@ -107,6 +127,12 @@ var getCommand = cli.Command{
 			Action:      getHeight,
 			Name:        "height",
 			Usage:       "Get current height",
+			Description: "",
+		},
+		{
+			Action:      getBlock,
+			Name:        "block",
+			Usage:       "Get raw block data",
 			Description: "",
 		},
 	},

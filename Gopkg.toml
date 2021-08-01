@@ -48,3 +48,15 @@
 [[constraint]]
   name = "github.com/modern-go/concurrent"
   version = "1.0.3"
+
+[[override]]
+  name = "github.com/cpuguy83/go-md2man"
+  version = "1.0.10"
+
+[[override]]
+  name = "github.com/russross/blackfriday"
+  version = "1.6.0"
+
+[[constraint]]
+  name = "github.com/creachadair/jrpc2"
+  version = "0.26.1"

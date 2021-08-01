@@ -2,7 +2,6 @@
 package server
 
 import (
-	"io"
 	"net"
 	"sync"
 
@@ -10,26 +9,44 @@ import (
 	"github.com/creachadair/jrpc2/channel"
 )
 
-// Loop obtains connections from lst and starts a server for each with the
-// given assigner and options, running in a new goroutine. If accept reports an
-// error, the loop will terminate and the error will be reported once all the
-// servers currently active have returned.
+// Service is the interface used by the Loop and Run functions to start up a
+// server. The methods of this interface allow the instance to manage its
+// state: The Assigner method is called before the server is started, and can
+// be used to initialize the service. The Finish method is called after the
+// server exits, and can be used to clean up.
+type Service interface {
+	// This method is called to create an assigner and initialize the service
+	// for use.  If it reports an error, the server is not started.
+	Assigner() (jrpc2.Assigner, error)
+
+	// This method is called when the server for this service has exited.
+	// The arguments are the assigner returned by the Assigner method and the
+	// server exit status.
+	Finish(jrpc2.Assigner, jrpc2.ServerStatus)
+}
+
+// Static wraps a jrpc2.Assigner to trivially implement the Service interface.
+func Static(m jrpc2.Assigner) func() Service { return static{methods: m}.New }
+
+type static struct{ methods jrpc2.Assigner }
+
+func (s static) New() Service                            { return s }
+func (s static) Assigner() (jrpc2.Assigner, error)       { return s.methods, nil }
+func (static) Finish(jrpc2.Assigner, jrpc2.ServerStatus) {}
+
+// Loop obtains connections from lst and starts a server for each using a
+// service instance returned by newService and the given options. Each server
+// runs in a new goroutine.
 //
-// While running, Loop maintains a pool of *jrpc2.Server values to reduce setup
-// and memory overhead. However, it does not rate-limit connections.
-//
-// TODO: Add options to support sensible rate-limitation.
-func Loop(lst net.Listener, assigner jrpc2.Assigner, opts *LoopOptions) error {
+// If the listener reports an error, the loop will terminate and that error
+// will be reported to the caller of Loop once any active servers have
+// returned.
+func Loop(lst net.Listener, newService func() Service, opts *LoopOptions) error {
 	newChannel := opts.framing()
 	serverOpts := opts.serverOpts()
 	log := func(string, ...interface{}) {}
 	if serverOpts != nil && serverOpts.Logger != nil {
 		log = serverOpts.Logger.Printf
-	}
-
-	// Maintain a pool of servers to save the server setup cost.
-	pool := &sync.Pool{
-		New: func() interface{} { return jrpc2.NewServer(assigner, serverOpts) },
 	}
 
 	var wg sync.WaitGroup
@@ -48,10 +65,17 @@ func Loop(lst net.Listener, assigner jrpc2.Assigner, opts *LoopOptions) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			srv := pool.Get().(*jrpc2.Server).Start(ch)
-			defer pool.Put(srv)
-			if err := srv.Wait(); err != nil && err != io.EOF {
-				log("Server exit: %v", err)
+			svc := newService()
+			assigner, err := svc.Assigner()
+			if err != nil {
+				log("Service initialization failed: %v", err)
+				return
+			}
+			srv := jrpc2.NewServer(assigner, serverOpts).Start(ch)
+			stat := srv.WaitStatus()
+			svc.Finish(assigner, stat)
+			if stat.Err != nil {
+				log("Server exit: %v", stat.Err)
 			}
 		}()
 	}

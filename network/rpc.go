@@ -66,7 +66,7 @@ func WithRpcServer(hostPort string, handlers map[string]interface{}, callback fu
 		headers.Add("Access-Control-Allow-Origin", "*")
 		headers.Add("Content-Type", "application/json")
 
-		server.Loop(listener, assigner, &server.LoopOptions{
+		server.Loop(listener, server.Static(assigner), &server.LoopOptions{
 			Framing: func(r io.Reader, w io.WriteCloser) channel.Channel {
 				return &httpFrame{
 					r:       bufio.NewReader(r),
